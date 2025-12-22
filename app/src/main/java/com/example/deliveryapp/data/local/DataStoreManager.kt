@@ -9,16 +9,26 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.example.deliveryapp.utils.Constants
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import javax.inject.Inject
+import javax.inject.Singleton
 
 private const val TAG = "DataStoreManager"
 
 // Đảm bảo đây là top-level property để DataStore được khởi tạo đúng cách
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = Constants.PREFS_NAME)
 
-class DataStoreManager(private val context: Context) {
+//class DataStoreManager(private val context: Context)
+
+@Singleton
+class DataStoreManager @Inject constructor(
+    @ApplicationContext private val context: Context
+)
+
+{
     companion object {
         val ACCESS_TOKEN_KEY = stringPreferencesKey(Constants.KEY_ACCESS_TOKEN)
         val REFRESH_TOKEN_KEY = stringPreferencesKey(Constants.KEY_REFRESH_TOKEN)

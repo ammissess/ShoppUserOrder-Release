@@ -2,6 +2,7 @@ package com.example.deliveryapp.ui.navigation
 
 sealed class Screen(val route: String) {
     object Splash : Screen("splash")
+    object SessionGate : Screen("session_gate")
     object Login : Screen("login")
     object Signup : Screen("signup")
     object Home : Screen("home")

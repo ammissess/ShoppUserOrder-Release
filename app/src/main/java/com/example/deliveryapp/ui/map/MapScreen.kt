@@ -12,6 +12,8 @@ import com.mapbox.maps.Style
 import com.mapbox.maps.plugin.annotation.generated.PointAnnotationOptions
 import com.mapbox.maps.plugin.annotation.annotations
 import com.mapbox.maps.plugin.annotation.generated.createPointAnnotationManager
+import kotlinx.coroutines.time.delay
+import kotlin.time.Duration
 
 @Composable
 fun MapScreen(

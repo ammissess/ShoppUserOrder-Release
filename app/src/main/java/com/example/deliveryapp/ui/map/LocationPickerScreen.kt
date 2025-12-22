@@ -56,6 +56,11 @@ fun LocationPickerScreen(
     var searchQuery by remember { mutableStateOf("") }
     var showSearch by remember { mutableStateOf(false) }
     var isLoadingCurrentLocation by remember { mutableStateOf(false) }
+    var mapReady by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        mapReady = true
+    }
 
     val coroutineScope = rememberCoroutineScope()
     val pinIcon = rememberIconImage(resourceId = R.drawable.ic_locationn)
@@ -282,6 +287,7 @@ fun LocationPickerScreen(
                         }
                     }
                 }
+
                 is Resource.Loading -> {
                     Box(
                         modifier = Modifier
@@ -292,6 +298,7 @@ fun LocationPickerScreen(
                         CircularProgressIndicator()
                     }
                 }
+
                 is Resource.Error -> {
                     Text(
                         text = "Không tìm thấy kết quả: ${res.message}",
@@ -303,6 +310,7 @@ fun LocationPickerScreen(
         }
 
         // Bản đồ
+        if (mapReady) {
         MapboxMap(
             modifier = Modifier
                 .weight(1f)
@@ -339,7 +347,7 @@ fun LocationPickerScreen(
                 }
             }
         }
-
+    }
         // Phần xác nhận địa chỉ
         Box(
             modifier = Modifier

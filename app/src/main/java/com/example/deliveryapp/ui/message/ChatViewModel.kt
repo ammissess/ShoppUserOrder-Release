@@ -1,166 +1,170 @@
 package com.example.deliveryapp.ui.message
 
+import android.content.Context
 import android.util.Log
-import androidx.compose.runtime.mutableStateListOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.deliveryapp.data.local.DataStoreManager
-import com.example.deliveryapp.data.remote.api.ChatApi
+import com.example.deliveryapp.utils.Constants
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.firstOrNull
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import okhttp3.*
+import okio.ByteString
 import org.json.JSONObject
 import javax.inject.Inject
 
-data class ChatMessageUi(
-    val id: Long? = null,
-    val fromUserId: Long,
-    val toUserId: Long,
-    val content: String,
-    val createdAt: String,
-    val orderId: Long
-)
-
 @HiltViewModel
 class ChatViewModel @Inject constructor(
-    private val dataStore: DataStoreManager,
-    private val chatApi: ChatApi        // ✅ inject ChatApi mới
+    @ApplicationContext private val appContext: Context
 ) : ViewModel() {
 
-    val messages = mutableStateListOf<ChatMessageUi>()
-    val inputText = mutableStateOf("")
-    val isChatEnabled = mutableStateOf(true)
-    val customerName = mutableStateOf("Customer")
+//    private val _conversations = MutableStateFlow<Map<Long, MutableList<ChatMessage>>>(emptyMap())
+//    val conversations: StateFlow<Map<Long, MutableList<ChatMessage>>> = _conversations
 
-    private var wsManager: com.example.deliveryapp.utils.WebSocketManager? = null
-    private var currentOrderId: Long = 0L
-    private var customerId: Long = 0L
-    private var shipperId: Long = 0L
-    val shipperName = mutableStateOf("")
+    private val _conversations =
+        MutableStateFlow<Map<Long, List<ChatMessage>>>(emptyMap())
 
-    /** ✅ Load tin nhắn từ API trước khi connect WebSocket */
-    private fun loadRecentMessages(orderId: Long) {
-        viewModelScope.launch {
-            try {
-                val response = chatApi.getMessages(orderId, 20)
-                if (response.isSuccessful) {
-                    val messageList = response.body()?.messages ?: emptyList()
-                    val uiMsgs = messageList.sortedBy { it.id }.map {
-                        ChatMessageUi(
-                            id = it.id,
-                            fromUserId = it.from_user_id,
-                            toUserId = it.to_user_id,
-                            content = it.content,
-                            createdAt = it.created_at,
-                            orderId = it.order_id
-                        )
-                    }
-                    messages.clear()
-                    messages.addAll(uiMsgs)
-                    Log.d("ChatViewModel", "Loaded ${uiMsgs.size} messages from REST API")
-                } else {
-                    Log.e("ChatViewModel", "Failed to load messages: ${response.code()}")
+    val conversations: StateFlow<Map<Long, List<ChatMessage>>> = _conversations
+
+
+    private var currentOrderId: Long? = null
+    private var webSocket: WebSocket? = null
+    private val client = OkHttpClient()
+    private val gson = Gson()
+
+    init {
+        loadCachedConversations()
+    }
+
+    /** Kết nối WebSocket bằng token người dùng */
+    fun connectWebSocket(orderId: Long, accessToken: String) {
+        currentOrderId = orderId
+        val url = Constants.BASE_URL.replace("http", "ws") + "ws?token=$accessToken"
+        val request = Request.Builder().url(url).build()
+
+        webSocket = client.newWebSocket(request, object : WebSocketListener() {
+            override fun onOpen(ws: WebSocket, response: Response) {
+                Log.d("ChatVM", "✅ WS connected (User)")
+            }
+
+            override fun onMessage(ws: WebSocket, text: String) {
+                try {
+                    val json = JSONObject(text)
+                    val msg = ChatMessage(
+                        fromUserId = json.optLong("from_user_id", 0L),
+                        toUserId = json.optLong("to_user_id", 0L),
+                        content = json.optString("content"),
+                        createdAt = System.currentTimeMillis()
+                    )
+                    val id = currentOrderId ?: return
+                    viewModelScope.launch { appendMessage(id, msg) }
+                } catch (e: Exception) {
+                    Log.e("ChatVM", "Parse error: ${e.message}")
                 }
-            } catch (e: Exception) {
-                Log.e("ChatViewModel", "Error loading messages: ${e.message}")
             }
-        }
-    }
 
-    /** ✅ Load thêm tin nhắn cũ (scroll lên) */
-    fun loadMore(beforeId: Long) {
-        viewModelScope.launch {
-            try {
-                val response = chatApi.getMessages(currentOrderId, 20, beforeId)
-                if (response.isSuccessful) {
-                    val more = response.body()?.messages ?: emptyList()
-                    val uiMsgs = more.sortedBy { it.id }.map {
-                        ChatMessageUi(
-                            id = it.id,
-                            fromUserId = it.from_user_id,
-                            toUserId = it.to_user_id,
-                            content = it.content,
-                            createdAt = it.created_at,
-                            orderId = it.order_id
-                        )
-                    }
-                    messages.addAll(0, uiMsgs)
-                    Log.d("ChatViewModel", "Loaded ${uiMsgs.size} older messages")
-                }
-            } catch (e: Exception) {
-                Log.e("ChatViewModel", "Load more error: ${e.message}")
+            override fun onMessage(ws: WebSocket, bytes: ByteString) {
+                onMessage(ws, bytes.utf8())
             }
-        }
-    }
 
-    /** Khởi tạo Chat: tải REST → mở WebSocket */
-    fun initChat(
-        orderId: Long,
-        shipperId: Long,
-        shipperName: String,
-        token: String
-    ) {
-        this.currentOrderId = orderId
-        this.shipperId = shipperId
-        this.shipperName.value = shipperName
-
-        viewModelScope.launch {
-            loadRecentMessages(orderId)     // 🟢 tải tin nhắn trước
-            val accessToken = token.ifEmpty { dataStore.accessToken.firstOrNull() ?: return@launch }
-            wsManager = com.example.deliveryapp.utils.WebSocketManager(
-                token = accessToken,
-                onMessageReceived = { msg -> handleIncomingMessage(msg) },
-                onClosed = { isChatEnabled.value = false }
-            )
-            wsManager?.connect(orderId)
-        }
-    }
-
-    /** Nhận tin nhắn mới từ WS */
-    private fun handleIncomingMessage(jsonStr: String) {
-        try {
-            val json = JSONObject(jsonStr)
-            if (json.optString("type") == "chat_message") {
-                val message = ChatMessageUi(
-                    fromUserId = json.optLong("from_user_id"),
-                    toUserId = json.optLong("to_user_id"),
-                    content = json.optString("content", ""),
-                    createdAt = json.optString("created_at", ""),
-                    orderId = json.optLong("order_id", 0L)
-                )
-                messages.add(message)
+            override fun onFailure(ws: WebSocket, t: Throwable, response: Response?) {
+                Log.e("ChatVM", "❌ WS Failure: ${t.message}")
             }
-        } catch (e: Exception) {
-            Log.e("ChatViewModel", "Parse message error: ${e.message}")
-        }
+        })
     }
 
-    /** Gửi tin nhắn đến shipper */
-    fun sendMessage() {
-        if (!isChatEnabled.value || inputText.value.isBlank()) return
-        val content = inputText.value
-        wsManager?.sendMessage(currentOrderId, shipperId, content)
-        val sentMsg = ChatMessageUi(
-            fromUserId = customerId,
+    /** Gửi tin nhắn từ user sang shipper */
+    /** Gửi tin nhắn từ user sang shipper */
+    fun sendMessage(orderId: Long, shipperId: Long, content: String) {
+        if (content.isBlank()) return
+        if (shipperId == 0L) {
+            Log.e("ChatVM", "❌ Không thể gửi vì shipperId = 0")
+            return
+        }
+
+        // 🔍 Thêm dòng log này để kiểm tra shipperId thực tế
+        Log.d("ChatSend", "🚀 Sending message toUser=$shipperId for order=$orderId")
+
+        val json = JSONObject().apply {
+            put("type", "chat_message")
+            put("order_id", orderId)
+            put("to_user_id", shipperId) // ✅ ID shipper thật (users.id)
+            put("content", content)
+        }
+
+        Log.d("ChatVM", "📤 Sending: order=$orderId, to=$shipperId, msg=$content")
+        webSocket?.send(json.toString())
+
+        val msg = ChatMessage(
+            fromUserId = -1L, // user hiện tại
             toUserId = shipperId,
             content = content,
-            createdAt = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss")
-                .format(java.util.Date()),
-            orderId = currentOrderId
+            createdAt = System.currentTimeMillis()
         )
-        messages.add(sentMsg)
-        inputText.value = ""
+        viewModelScope.launch { appendMessage(orderId, msg) }
     }
 
-    fun onOrderCompleted() {
-        isChatEnabled.value = false
-        wsManager?.close()
-        messages.clear()
+
+    /** Lưu tin nhắn vào bộ nhớ và cache */
+//    private fun appendMessage(orderId: Long, msg: ChatMessage) {
+//        val map = _conversations.value.toMutableMap()
+//        val list = map[orderId] ?: mutableListOf()
+//        list.add(msg)
+//        map[orderId] = list
+//        _conversations.value = map
+//        saveConversation(orderId, list)
+//    }
+
+    private fun appendMessage(orderId: Long, msg: ChatMessage) {
+        val currentMap = _conversations.value
+        val oldList = currentMap[orderId] ?: emptyList()
+
+        val newList = oldList + msg   // ✅ tạo list mới
+        val newMap = currentMap + (orderId to newList)
+
+        _conversations.value = newMap
+        saveConversation(orderId, newList)
+    }
+
+
+    fun clearConversation(orderId: Long) {
+        val map = _conversations.value.toMutableMap()
+        map.remove(orderId)
+        _conversations.value = map
+        deleteConversation(orderId)
     }
 
     override fun onCleared() {
-        wsManager?.close()
+        webSocket?.close(1000, "closed")
         super.onCleared()
+    }
+
+    // ======= Cache bằng SharedPreferences =======
+    private fun prefs() = appContext.getSharedPreferences("chat_cache_user", Context.MODE_PRIVATE)
+
+    private fun saveConversation(orderId: Long, list: List<ChatMessage>) {
+        prefs().edit().putString(orderId.toString(), gson.toJson(list)).apply()
+    }
+
+    private fun loadCachedConversations() {
+        val all = prefs().all
+        val map = mutableMapOf<Long, MutableList<ChatMessage>>()
+        all.forEach { (orderIdStr, jsonStr) ->
+            val id = orderIdStr.toLongOrNull() ?: return@forEach
+            val type = object : TypeToken<MutableList<ChatMessage>>() {}.type
+            runCatching {
+                val list: MutableList<ChatMessage> = gson.fromJson(jsonStr as String, type)
+                map[id] = list
+            }
+        }
+        _conversations.value = map
+    }
+
+    private fun deleteConversation(orderId: Long) {
+        prefs().edit().remove(orderId.toString()).apply()
     }
 }

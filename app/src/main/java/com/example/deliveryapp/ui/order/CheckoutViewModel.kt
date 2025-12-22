@@ -125,71 +125,121 @@ class CheckoutViewModel @Inject constructor(
         )
     }
 
+//    fun confirmOrder(cart: List<CartItem>, paymentMethod: String) {
+//        viewModelScope.launch {
+//            _confirmOrderState.value = Resource.Loading()
+//
+//            try {
+//                val deliveryInfo = _deliveryInfo.value
+//
+//                // Kiểm tra tọa độ
+//                if (deliveryInfo.latitude == null || deliveryInfo.longitude == null) {
+//                    _confirmOrderState.value = Resource.Error("Vui lòng chọn địa chỉ giao hàng")
+//                    return@launch
+//                }
+//
+//                // Kiểm tra thông tin người nhận
+//                if (deliveryInfo.name.isNullOrBlank() || deliveryInfo.phone.isNullOrBlank()) {
+//                    _confirmOrderState.value = Resource.Error("Vui lòng điền đầy đủ thông tin người nhận")
+//                    return@launch
+//                }
+//
+//                val refreshToken = dataStore.refreshToken.first()
+//                if (refreshToken.isNullOrEmpty()) {
+//                    _confirmOrderState.value = Resource.Error("Phiên đăng nhập hết hạn, vui lòng đăng nhập lại")
+//                    return@launch
+//                }
+//
+//                val products = cart.map {
+//                    OrderProductDto(
+//                        product_id = it.product.id,
+//                        quantity = it.quantity.toLong()
+//                    )
+//                }
+//
+//                val request = PlaceOrderRequestDto(
+//                    latitude = deliveryInfo.latitude,
+//                    longitude = deliveryInfo.longitude,
+//                    products = products
+//                )
+//
+//                Log.d(TAG, "Calling placeOrderWithRefreshToken with lat=${deliveryInfo.latitude}, lng=${deliveryInfo.longitude}")
+//                //val result = orderRepository.placeOrderWithRefreshToken(request, refreshToken)
+//
+////                if (result is Resource.Error) {
+////                    Log.e(TAG, "Order failed: ${result.message}")
+////
+////                    if (result.message?.contains("401") == true ||
+////                        result.message?.contains("phiên") == true ||
+////                        result.message?.contains("token") == true) {
+////                        authRepository.logout()
+////                        _confirmOrderState.value = Resource.Error("Phiên đăng nhập hết hạn, vui lòng đăng nhập lại")
+////                    } else {
+////                        _confirmOrderState.value = result
+////                    }
+////                } else {
+////                    _confirmOrderState.value = result
+////
+////                    if (result is Resource.Success) {
+////                        Log.d(TAG, "Order placed successfully, clearing cart")
+////                        _cart.value = emptyList()
+////                    }
+////                }
+//
+//
+//
+//            } catch (e: Exception) {
+//                Log.e(TAG, "Error in confirmOrder: ${e.message}", e)
+//                _confirmOrderState.value = Resource.Error(e.message ?: "Lỗi không xác định")
+//            }
+//        }
+//    }
+
     fun confirmOrder(cart: List<CartItem>, paymentMethod: String) {
         viewModelScope.launch {
             _confirmOrderState.value = Resource.Loading()
 
-            try {
-                val deliveryInfo = _deliveryInfo.value
+            val deliveryInfo = _deliveryInfo.value
 
-                // Kiểm tra tọa độ
-                if (deliveryInfo.latitude == null || deliveryInfo.longitude == null) {
-                    _confirmOrderState.value = Resource.Error("Vui lòng chọn địa chỉ giao hàng")
-                    return@launch
-                }
+            if (deliveryInfo.latitude == null || deliveryInfo.longitude == null) {
+                _confirmOrderState.value = Resource.Error("Vui lòng chọn địa chỉ giao hàng")
+                return@launch
+            }
 
-                // Kiểm tra thông tin người nhận
-                if (deliveryInfo.name.isNullOrBlank() || deliveryInfo.phone.isNullOrBlank()) {
-                    _confirmOrderState.value = Resource.Error("Vui lòng điền đầy đủ thông tin người nhận")
-                    return@launch
-                }
+            if (deliveryInfo.name.isNullOrBlank() || deliveryInfo.phone.isNullOrBlank()) {
+                _confirmOrderState.value = Resource.Error("Vui lòng điền đầy đủ thông tin người nhận")
+                return@launch
+            }
 
-                val refreshToken = dataStore.refreshToken.first()
-                if (refreshToken.isNullOrEmpty()) {
-                    _confirmOrderState.value = Resource.Error("Phiên đăng nhập hết hạn, vui lòng đăng nhập lại")
-                    return@launch
-                }
-
-                val products = cart.map {
-                    OrderProductDto(
-                        product_id = it.product.id,
-                        quantity = it.quantity.toLong()
-                    )
-                }
-
-                val request = PlaceOrderRequestDto(
-                    latitude = deliveryInfo.latitude,
-                    longitude = deliveryInfo.longitude,
-                    products = products
+            val products = cart.map {
+                OrderProductDto(
+                    product_id = it.product.id,
+                    quantity = it.quantity.toLong()
                 )
+            }
 
-                Log.d(TAG, "Calling placeOrderWithRefreshToken with lat=${deliveryInfo.latitude}, lng=${deliveryInfo.longitude}")
-                val result = orderRepository.placeOrderWithRefreshToken(request, refreshToken)
+            val request = PlaceOrderRequestDto(
+                latitude = deliveryInfo.latitude,
+                longitude = deliveryInfo.longitude,
+                products = products
+            )
 
-                if (result is Resource.Error) {
-                    Log.e(TAG, "Order failed: ${result.message}")
+            // 👇 DÁN ĐOẠN CODE Ở ĐÂY
+            Log.d(
+                TAG,
+                "Calling placeOrder with lat=${deliveryInfo.latitude}, lng=${deliveryInfo.longitude}"
+            )
 
-                    if (result.message?.contains("401") == true ||
-                        result.message?.contains("phiên") == true ||
-                        result.message?.contains("token") == true) {
-                        authRepository.logout()
-                        _confirmOrderState.value = Resource.Error("Phiên đăng nhập hết hạn, vui lòng đăng nhập lại")
-                    } else {
-                        _confirmOrderState.value = result
-                    }
-                } else {
-                    _confirmOrderState.value = result
+            val result = orderRepository.placeOrder(request)
 
-                    if (result is Resource.Success) {
-                        Log.d(TAG, "Order placed successfully, clearing cart")
-                        _cart.value = emptyList()
-                    }
-                }
+            _confirmOrderState.value = result
 
-            } catch (e: Exception) {
-                Log.e(TAG, "Error in confirmOrder: ${e.message}", e)
-                _confirmOrderState.value = Resource.Error(e.message ?: "Lỗi không xác định")
+            if (result is Resource.Success) {
+                Log.d(TAG, "Order placed successfully, clearing cart")
+                _cart.value = emptyList()
             }
         }
     }
+
+
 }

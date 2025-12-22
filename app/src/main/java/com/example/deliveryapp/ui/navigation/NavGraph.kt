@@ -38,6 +38,12 @@ fun NavGraph(
             SplashScreen(navController)
         }
 
+        //route cho SessionGate
+        composable(Screen.SessionGate.route) {
+            SessionGateScreen(navController)
+        }
+
+
         // Authentication routes
         composable(Screen.Login.route) { LoginScreen(navController) }
         composable(Screen.Signup.route) { SignupScreen(navController) }
@@ -63,8 +69,11 @@ fun NavGraph(
         // Main app routes
         composable(Screen.Home.route) { HomeScreen(navController) }
 
+//        composable("messages") {
+//            MessagesScreen(navController, orderId = 0L, shipperId = 0L, shipperName = "")  // Default args để tránh crash
+//        }
         composable("messages") {
-            MessagesScreen(navController, orderId = 0L, shipperId = 0L, shipperName = "")  // Default args để tránh crash
+            MessagesScreen(navController, orderId = 0L, shipperId = 0L)
         }
 
 //        composable(
@@ -81,13 +90,21 @@ fun NavGraph(
 //            MessagesScreen(navController, orderId, shipperId, shipperName)
 //        }
 
+//        composable(
+//            route = "messages/{orderId}",
+//            arguments = listOf(navArgument("orderId") { type = NavType.LongType })
+//        ) { backStackEntry ->
+//            val orderId = backStackEntry.arguments?.getLong("orderId") ?: 0L
+//            // vì không có shipperId / shipperName nên truyền mặc định 0 và ""
+//            MessagesScreen(navController, orderId = orderId, shipperId = 0L, shipperName = "")
+//        }
+
         composable(
             route = "messages/{orderId}",
             arguments = listOf(navArgument("orderId") { type = NavType.LongType })
         ) { backStackEntry ->
             val orderId = backStackEntry.arguments?.getLong("orderId") ?: 0L
-            // vì không có shipperId / shipperName nên truyền mặc định 0 và ""
-            MessagesScreen(navController, orderId = orderId, shipperId = 0L, shipperName = "")
+            MessagesScreen(navController, orderId = orderId, shipperId = 0L)
         }
 
 
@@ -103,20 +120,20 @@ fun NavGraph(
             OrderStatusScreen(orderId = orderId, navController = navController)
         }
 
-        // Chat giữa user và shipper
+
+// Chat giữa user và shipper
         composable(
-            route = "chat/{orderId}/{shipperId}/{shipperName}",
+            route = "messages/{orderId}/{shipperId}",
             arguments = listOf(
                 navArgument("orderId") { type = NavType.LongType },
-                navArgument("shipperId") { type = NavType.LongType },
-                navArgument("shipperName") { type = NavType.StringType }
+                navArgument("shipperId") { type = NavType.LongType }
             )
         ) { backStackEntry ->
             val orderId = backStackEntry.arguments?.getLong("orderId") ?: 0L
             val shipperId = backStackEntry.arguments?.getLong("shipperId") ?: 0L
-            val shipperName = backStackEntry.arguments?.getString("shipperName") ?: ""
-            MessagesScreen(navController, orderId, shipperId, shipperName)
+            MessagesScreen(navController, orderId = orderId, shipperId = shipperId)
         }
+
 
 
         composable("profile") { ProfileScreen(navController) }

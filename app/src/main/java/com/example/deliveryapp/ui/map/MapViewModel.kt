@@ -35,7 +35,9 @@ class MapViewModel @Inject constructor(private val getOrderDetail: GetOrderDetai
         _orderStatus.value = getOrderDetail(id)
         if (_orderStatus.value is Resource.Success<OrderDetailDto>) {
             val dto = (_orderStatus.value as Resource.Success<OrderDetailDto>).data!!
-            _orderLocation.value = Pair(dto.order.latitude, dto.order.longitude)
+            //_orderLocation.value = Pair(dto.latitude, dto.longitude)
+            // logic location vẽ map?
+            _orderLocation.value = null
         }
     }
 }

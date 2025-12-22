@@ -68,8 +68,8 @@ fun OrderDetailScreen(
                             Column(Modifier.padding(16.dp)) {
                                 Text("Trạng thái", style = MaterialTheme.typography.titleMedium)
                                 Spacer(Modifier.height(8.dp))
-                                Text("Đơn hàng: ${detail.order.order_status}")
-                                Text("Thanh toán: ${detail.order.payment_status}")
+                                Text("Đơn hàng: ${detail.order_status}")
+                                Text("Thanh toán: ${detail.payment_status}")
                             }
                         }
                     }
@@ -116,7 +116,7 @@ fun OrderDetailScreen(
                             ) {
                                 Text("Tổng cộng:", style = MaterialTheme.typography.titleLarge)
                                 Text(
-                                    formatPrice(detail.order.total_amount),
+                                    formatPrice(detail.total_amount),
                                     style = MaterialTheme.typography.titleLarge,
                                     color = MaterialTheme.colorScheme.primary
                                 )
@@ -126,13 +126,13 @@ fun OrderDetailScreen(
 
                         Spacer(Modifier.height(20.dp))
 
-                        val status = detail.order.order_status
+                        val status = detail.order_status
 
                         if (status == "shipping") {
                             Button(
                                 onClick = {
                                     // chỉ truyền orderId
-                                    navController.navigate("messages/${detail.order.id}")
+                                    navController.navigate("messages/${detail.id}")
                                 },
                                 modifier = Modifier.fillMaxWidth(),
                                 colors = ButtonDefaults.buttonColors(

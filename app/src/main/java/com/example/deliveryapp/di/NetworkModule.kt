@@ -33,6 +33,22 @@ object NetworkModule {
     @RawAuthApi
     fun provideRawAuthApi(): AuthApi = ApiClient.create().create(AuthApi::class.java)
 
+    //Gan Quanlifier cho mapbox
+    @Provides
+    @Singleton
+    @MapboxClient
+    fun provideMapboxOkHttpClient(): OkHttpClient {
+        return OkHttpClient.Builder()
+            .addInterceptor { chain ->
+                val request = chain.request().newBuilder()
+                    .addHeader("User-Agent", "DeliveryApp/1.0 (Android)")
+                    .build()
+                chain.proceed(request)
+            }
+            .build()
+    }
+
+
     // DataStoreManager
     @Provides
     @Singleton
@@ -42,14 +58,18 @@ object NetworkModule {
     // Interceptor, cần RawAuthApi để gọi refresh (tránh vòng lặp)
     @Provides
     @Singleton
+    @AuthInterceptorQualifier
     fun provideAuthInterceptor(
         dataStore: DataStoreManager,
         @RawAuthApi rawAuthApi: AuthApi
     ): Interceptor = AuthInterceptor(dataStore, rawAuthApi)
 
+
     @Provides
     @Singleton
-    fun provideRetrofit(interceptor: Interceptor): Retrofit = ApiClient.create(interceptor)
+    fun provideRetrofit(
+        @AuthInterceptorQualifier interceptor: Interceptor
+    ): Retrofit = ApiClient.create(interceptor)
 
     @Provides
     @Singleton
@@ -99,7 +119,7 @@ object NetworkModule {
 
     @Provides
     @Singleton
-    fun provideGeocodingApi(okHttpClient: OkHttpClient): GeocodingApi {
+    fun provideGeocodingApi( @MapboxClient okHttpClient: OkHttpClient): GeocodingApi {
         val retrofit = Retrofit.Builder()
             .baseUrl("https://nominatim.openstreetmap.org/")
             .client(okHttpClient)
@@ -107,13 +127,15 @@ object NetworkModule {
             .build()
         return retrofit.create(GeocodingApi::class.java)
     }
-    @Provides
-    @Singleton
-    fun provideSessionViewModel(
-        dataStore: DataStoreManager,
-        authRepository: AuthRepository,
-        @NormalAuthApi authApi: AuthApi
-    ): SessionViewModel = SessionViewModel(dataStore, authRepository, authApi)
+//    @Provides
+//    @Singleton
+//    fun provideSessionViewModel(
+//        dataStore: DataStoreManager,
+//        authRepository: AuthRepository,
+//        @NormalAuthApi authApi: AuthApi
+//    ): SessionViewModel = SessionViewModel(dataStore, authRepository, authApi)
+
+
     @Provides
     @Singleton
     fun provideChatApi(retrofit: Retrofit): ChatApi =

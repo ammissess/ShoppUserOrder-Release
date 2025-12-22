@@ -9,22 +9,24 @@ import retrofit2.converter.gson.GsonConverterFactory
 import java.util.concurrent.TimeUnit
 
 object ApiClient {
+
     fun create(authInterceptor: Interceptor? = null): Retrofit {
-        // bật log chi tiết
         val logging = HttpLoggingInterceptor().apply {
             level = HttpLoggingInterceptor.Level.BODY
         }
 
-        val builder = OkHttpClient.Builder()
-            .addInterceptor(logging) // 👈 thêm vào client
-            .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(30, TimeUnit.SECONDS)
-
-        authInterceptor?.let { builder.addInterceptor(it) }
+        val okHttpClient = OkHttpClient.Builder()
+            .apply {
+                if (authInterceptor != null) {
+                    addInterceptor(authInterceptor) // 👈 GẮN TRƯỚC
+                }
+                addInterceptor(logging)
+            }
+            .build()
 
         return Retrofit.Builder()
             .baseUrl(Constants.BASE_URL)
-            .client(builder.build())
+            .client(okHttpClient)
             .addConverterFactory(GsonConverterFactory.create())
             .build()
     }

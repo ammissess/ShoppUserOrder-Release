@@ -158,7 +158,9 @@ fun ProductImageGallery(images: List<ProductImageDto>) {
             HorizontalPager(state = pagerState) { page ->
                 val image = images[page]
                 AsyncImage(
-                    model = image.url.ifEmpty { "https://via.placeholder.com/300" },
+                   // model = image.url.ifEmpty { "https://via.placeholder.com/300" },
+                    model = image.url?.takeIf { it.isNotBlank() }
+                        ?: "https://via.placeholder.com/300?text=No+Image",
                     contentDescription = null,
                     modifier = Modifier
                         .fillMaxWidth()

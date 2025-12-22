@@ -32,6 +32,7 @@ class OrderViewModel @Inject constructor(
     private val _isChatEnabled = MutableStateFlow(false)
     val isChatEnabled: StateFlow<Boolean> = _isChatEnabled
 
+    private var currentShipperId: Long? = null
     private var pollingActive = false
 
     fun placeOrder(req: PlaceOrderRequestDto) {
@@ -40,36 +41,73 @@ class OrderViewModel @Inject constructor(
         }
     }
 
+    fun getCurrentShipperId(): Long? = currentShipperId
+
     fun loadOrderDetail(id: Long) {
         viewModelScope.launch {
-            _orderDetail.value = getOrderDetailUseCase(id)
+            val result = getOrderDetailUseCase(id)
+            _orderDetail.value = result
+
+            if (result is Resource.Success) {
+                currentShipperId = result.data?.shipper_id
+            }
         }
     }
 
     /**
      * Polling trạng thái đơn hàng mỗi 5 giây, gọi callback khi thay đổi
      */
-    fun pollStatus(orderId: Long, onStatusChange: (status: String, shipperId: Long) -> Unit) {
+//    fun pollStatus(orderId: Long, onStatusChange: (status: String, shipperId: Long) -> Unit) {
+//        viewModelScope.launch {
+//            pollingActive = true
+//            var lastStatus: String? = null
+//
+//            while (pollingActive) {
+//                val result = getOrderDetailUseCase(orderId)
+//                if (result is Resource.Success) {
+//                    val order = result.data?.order
+//                    val newStatus = order?.order_status ?: ""
+//                    val shipperId = order?.shipper_id ?: 0L
+//
+//                    if (newStatus != lastStatus) {
+//                        lastStatus = newStatus
+//                        onStatusChange(newStatus, shipperId)
+//                    }
+//                }
+//                delay(5000)
+//            }
+//        }
+//    }
+
+    fun pollStatus(
+        orderId: Long,
+        onStatusChange: (status: String) -> Unit
+    ) {
         viewModelScope.launch {
             pollingActive = true
             var lastStatus: String? = null
 
             while (pollingActive) {
                 val result = getOrderDetailUseCase(orderId)
+
                 if (result is Resource.Success) {
-                    val order = result.data?.order
-                    val newStatus = order?.order_status ?: ""
-                    val shipperId = order?.shipper_id ?: 0L
+                    val dto = result.data ?: continue
+
+                    val newStatus = dto.order_status
+                    currentShipperId = dto.shipper_id   // ✅ QUAN TRỌNG
 
                     if (newStatus != lastStatus) {
                         lastStatus = newStatus
-                        onStatusChange(newStatus, shipperId)
+                        onStatusChange(newStatus)
                     }
                 }
+
                 delay(5000)
             }
         }
     }
+
+
 
     /**
      * Lưu trạng thái mở chat

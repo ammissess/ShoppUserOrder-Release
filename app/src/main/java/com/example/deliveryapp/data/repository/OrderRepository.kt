@@ -28,20 +28,35 @@ class OrderRepository @Inject constructor(
     private val orderApi: OrderApi,
     private val dataStore: DataStoreManager
 ) {
-    suspend fun placeOrder(req: PlaceOrderRequestDto): Resource<String> = withContext(Dispatchers.IO) {
-        try {
-            val resp = orderApi.placeOrder(req)
-            if (resp.isSuccessful) {
-                Resource.Success(resp.body()?.message ?: "Order placed")
-            } else {
-                Resource.Error("Error: ${resp.code()}")
+//    suspend fun placeOrder(req: PlaceOrderRequestDto): Resource<String> =
+//        withContext(Dispatchers.IO) {
+//            try {
+//                val resp = orderApi.placeOrder(req)
+//                if (resp.isSuccessful) {
+//                    Resource.Success(resp.body()?.message ?: "Order placed")
+//                } else {
+//                    Resource.Error("Error: ${resp.code()}")
+//                }
+//            } catch (e: IOException) {
+//                Resource.Error("Network error")
+//            } catch (e: HttpException) {
+//                Resource.Error("Server error")
+//            }
+//        }
+        suspend fun placeOrder(req: PlaceOrderRequestDto): Resource<String> =
+            withContext(Dispatchers.IO) {
+                try {
+                    val resp = orderApi.placeOrder(req)
+                    if (resp.isSuccessful) {
+                        Resource.Success(resp.body()?.message ?: "Đặt hàng thành công")
+                    } else {
+                        Resource.Error("Error: ${resp.code()}")
+                    }
+                } catch (e: Exception) {
+                    Resource.Error(e.message ?: "Unknown error")
+                }
             }
-        } catch (e: IOException) {
-            Resource.Error("Network error")
-        } catch (e: HttpException) {
-            Resource.Error("Server error")
-        }
-    }
+
 
     suspend fun getOrders(): Resource<List<OrderSummaryDto>> = withContext(Dispatchers.IO) {
         try {
@@ -70,11 +85,15 @@ class OrderRepository @Inject constructor(
     }
 
     // Trong OrderRepository
-    suspend fun pollOrderStatus(orderId: Long, onStatusChange: (String) -> Unit): Resource<OrderDetailDto> {
+    suspend fun pollOrderStatus(
+        orderId: Long,
+        onStatusChange: (String) -> Unit
+    ): Resource<OrderDetailDto> {
         while (true) {
             val result = getOrderDetail(orderId)
             if (result is Resource.Success) {
-                val status = result.data?.order?.order_status
+                //val status = result.data?.order?.order_status
+                val status = result.data?.order_status
                 if (status != null) {
                     onStatusChange(status)
                     if (status == "received") {
@@ -88,108 +107,110 @@ class OrderRepository @Inject constructor(
         return getOrderDetail(orderId)
     }
 
-    suspend fun placeOrderWithRefreshToken(req: PlaceOrderRequestDto, refreshToken: String): Resource<String> = withContext(Dispatchers.IO) {
-        try {
-            Log.d(TAG, "Attempting to place order with refresh token")
-
-            // Sử dụng access token hiện tại trước
-            val currentAccessToken = dataStore.accessToken.first()
-            if (!currentAccessToken.isNullOrEmpty()) {
-                Log.d(TAG, "Using current access token")
-                val client = OkHttpClient.Builder()
-                    .addInterceptor { chain ->
-                        val request = chain.request().newBuilder()
-                            .addHeader("Authorization", "Bearer $currentAccessToken")
-                            .build()
-                        chain.proceed(request)
-                    }
-                    .build()
-
-                val retrofit = Retrofit.Builder()
-                    .baseUrl(Constants.BASE_URL)
-                    .client(client)
-                    .addConverterFactory(GsonConverterFactory.create())
-                    .build()
-
-                val customOrderApi = retrofit.create(OrderApi::class.java)
-
-                try {
-                    val resp = customOrderApi.placeOrder(req)
-                    if (resp.isSuccessful) {
-                        return@withContext Resource.Success(resp.body()?.message ?: "Đặt hàng thành công")
-                    }
-                    // Nếu không thành công và không phải 401, trả về lỗi
-                    if (resp.code() != 401) {
-                        return@withContext Resource.Error("Error: ${resp.code()}")
-                    }
-                    // Nếu 401, tiếp tục thử refresh token
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error with current token: ${e.message}")
-                    // Tiếp tục thử refresh token
-                }
-            }
-
-            // Thử refresh token để lấy token mới
-            Log.d(TAG, "Attempting to refresh token")
-            val client = OkHttpClient.Builder().build()
-            val retrofit = Retrofit.Builder()
-                .baseUrl(Constants.BASE_URL)
-                .client(client)
-                .addConverterFactory(GsonConverterFactory.create())
-                .build()
-
-            val authApi = retrofit.create(com.example.deliveryapp.data.remote.api.AuthApi::class.java)
-
-            val refreshReq = RefreshTokenRequestDto(refreshToken = refreshToken)
-            val refreshResp = authApi.refreshAccessToken(refreshReq)
-
-            if (!refreshResp.isSuccessful) {
-                Log.e(TAG, "Refresh token failed: ${refreshResp.code()}")
-                return@withContext Resource.Error("Phiên đăng nhập hết hạn, vui lòng đăng nhập lại")
-            }
-
-            val newTokens = refreshResp.body() ?: return@withContext Resource.Error("Không nhận được token mới")
-
-            // Lưu token mới
-            dataStore.saveTokens(newTokens.accessToken, newTokens.refreshToken)
-            Log.d(TAG, "Saved new tokens, now placing order with new token")
-
-            // Tạo client mới với token mới
-            val newClient = OkHttpClient.Builder()
-                .addInterceptor { chain ->
-                    val request = chain.request().newBuilder()
-                        .addHeader("Authorization", "Bearer ${newTokens.accessToken}")
-                        .build()
-                    chain.proceed(request)
-                }
-                .build()
-
-            val newRetrofit = Retrofit.Builder()
-                .baseUrl(Constants.BASE_URL)
-                .client(newClient)
-                .addConverterFactory(GsonConverterFactory.create())
-                .build()
-
-            val newOrderApi = newRetrofit.create(OrderApi::class.java)
-
-            // Thử đặt hàng lại với token mới
-            val orderResp = newOrderApi.placeOrder(req)
-
-            if (orderResp.isSuccessful) {
-                Resource.Success(orderResp.body()?.message ?: "Đặt hàng thành công")
-            } else {
-                Log.e(TAG, "Order failed even with new token: ${orderResp.code()}")
-                Resource.Error("Không thể đặt hàng: ${orderResp.code()}")
-            }
-        } catch (e: IOException) {
-            Log.e(TAG, "Network error: ${e.message}", e)
-            Resource.Error("Lỗi mạng")
-        } catch (e: HttpException) {
-            Log.e(TAG, "Server error: ${e.message}", e)
-            Resource.Error("Lỗi server")
-        } catch (e: Exception) {
-            Log.e(TAG, "Unexpected error: ${e.message}", e)
-            Resource.Error("Lỗi không xác định: ${e.message}")
-        }
-    }
 }
+
+//    suspend fun placeOrderWithRefreshToken(req: PlaceOrderRequestDto, refreshToken: String): Resource<String> = withContext(Dispatchers.IO) {
+//        try {
+//            Log.d(TAG, "Attempting to place order with refresh token")
+//
+//            // Sử dụng access token hiện tại trước
+//            val currentAccessToken = dataStore.accessToken.first()
+//            if (!currentAccessToken.isNullOrEmpty()) {
+//                Log.d(TAG, "Using current access token")
+//                val client = OkHttpClient.Builder()
+//                    .addInterceptor { chain ->
+//                        val request = chain.request().newBuilder()
+//                            .addHeader("Authorization", "Bearer $currentAccessToken")
+//                            .build()
+//                        chain.proceed(request)
+//                    }
+//                    .build()
+//
+//                val retrofit = Retrofit.Builder()
+//                    .baseUrl(Constants.BASE_URL)
+//                    .client(client)
+//                    .addConverterFactory(GsonConverterFactory.create())
+//                    .build()
+//
+//                val customOrderApi = retrofit.create(OrderApi::class.java)
+//
+//                try {
+//                    val resp = customOrderApi.placeOrder(req)
+//                    if (resp.isSuccessful) {
+//                        return@withContext Resource.Success(resp.body()?.message ?: "Đặt hàng thành công")
+//                    }
+//                    // Nếu không thành công và không phải 401, trả về lỗi
+//                    if (resp.code() != 401) {
+//                        return@withContext Resource.Error("Error: ${resp.code()}")
+//                    }
+//                    // Nếu 401, tiếp tục thử refresh token
+//                } catch (e: Exception) {
+//                    Log.e(TAG, "Error with current token: ${e.message}")
+//                    // Tiếp tục thử refresh token
+//                }
+//            }
+//
+//            // Thử refresh token để lấy token mới
+//            Log.d(TAG, "Attempting to refresh token")
+//            val client = OkHttpClient.Builder().build()
+//            val retrofit = Retrofit.Builder()
+//                .baseUrl(Constants.BASE_URL)
+//                .client(client)
+//                .addConverterFactory(GsonConverterFactory.create())
+//                .build()
+//
+//            val authApi = retrofit.create(com.example.deliveryapp.data.remote.api.AuthApi::class.java)
+//
+//            val refreshReq = RefreshTokenRequestDto(refreshToken = refreshToken)
+//            val refreshResp = authApi.refreshAccessToken(refreshReq)
+//
+//            if (!refreshResp.isSuccessful) {
+//                Log.e(TAG, "Refresh token failed: ${refreshResp.code()}")
+//                return@withContext Resource.Error("Phiên đăng nhập hết hạn, vui lòng đăng nhập lại")
+//            }
+//
+//            val newTokens = refreshResp.body() ?: return@withContext Resource.Error("Không nhận được token mới")
+//
+//            // Lưu token mới
+//            dataStore.saveTokens(newTokens.accessToken, newTokens.refreshToken)
+//            Log.d(TAG, "Saved new tokens, now placing order with new token")
+//
+//            // Tạo client mới với token mới
+//            val newClient = OkHttpClient.Builder()
+//                .addInterceptor { chain ->
+//                    val request = chain.request().newBuilder()
+//                        .addHeader("Authorization", "Bearer ${newTokens.accessToken}")
+//                        .build()
+//                    chain.proceed(request)
+//                }
+//                .build()
+//
+//            val newRetrofit = Retrofit.Builder()
+//                .baseUrl(Constants.BASE_URL)
+//                .client(newClient)
+//                .addConverterFactory(GsonConverterFactory.create())
+//                .build()
+//
+//            val newOrderApi = newRetrofit.create(OrderApi::class.java)
+//
+//            // Thử đặt hàng lại với token mới
+//            val orderResp = newOrderApi.placeOrder(req)
+//
+//            if (orderResp.isSuccessful) {
+//                Resource.Success(orderResp.body()?.message ?: "Đặt hàng thành công")
+//            } else {
+//                Log.e(TAG, "Order failed even with new token: ${orderResp.code()}")
+//                Resource.Error("Không thể đặt hàng: ${orderResp.code()}")
+//            }
+//        } catch (e: IOException) {
+//            Log.e(TAG, "Network error: ${e.message}", e)
+//            Resource.Error("Lỗi mạng")
+//        } catch (e: HttpException) {
+//            Log.e(TAG, "Server error: ${e.message}", e)
+//            Resource.Error("Lỗi server")
+//        } catch (e: Exception) {
+//            Log.e(TAG, "Unexpected error: ${e.message}", e)
+//            Resource.Error("Lỗi không xác định: ${e.message}")
+//        }
+//    }
+//}
