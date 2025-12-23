@@ -29,7 +29,7 @@ class ChatViewModel @Inject constructor(
         MutableStateFlow<Map<Long, List<ChatMessage>>>(emptyMap())
 
     val conversations: StateFlow<Map<Long, List<ChatMessage>>> = _conversations
-
+    var currentUserId: Long? = null
 
     private var currentOrderId: Long? = null
     private var webSocket: WebSocket? = null
@@ -43,6 +43,7 @@ class ChatViewModel @Inject constructor(
     /** Kết nối WebSocket bằng token người dùng */
     fun connectWebSocket(orderId: Long, accessToken: String) {
         currentOrderId = orderId
+        currentUserId = extractUserIdFromToken(accessToken)
         val url = Constants.BASE_URL.replace("http", "ws") + "ws?token=$accessToken"
         val request = Request.Builder().url(url).build()
 
@@ -77,36 +78,77 @@ class ChatViewModel @Inject constructor(
         })
     }
 
-    /** Gửi tin nhắn từ user sang shipper */
-    /** Gửi tin nhắn từ user sang shipper */
-    fun sendMessage(orderId: Long, shipperId: Long, content: String) {
-        if (content.isBlank()) return
-        if (shipperId == 0L) {
-            Log.e("ChatVM", "❌ Không thể gửi vì shipperId = 0")
-            return
+    fun extractUserIdFromToken(token: String): Long? {
+        return try {
+            val parts = token.split(".")
+            if (parts.size < 2) return null
+            val payloadJson = String(
+                android.util.Base64.decode(
+                    parts[1],
+                    android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP
+                )
+            )
+            val payload = org.json.JSONObject(payloadJson)
+            payload.optLong("user_id", -1L)
+        } catch (e: Exception) {
+            null
         }
+    }
 
-        // 🔍 Thêm dòng log này để kiểm tra shipperId thực tế
-        Log.d("ChatSend", "🚀 Sending message toUser=$shipperId for order=$orderId")
+
+    /** Gửi tin nhắn từ user sang shipper */
+    fun sendMessage(orderId: Long, content: String) {
+        if (content.isBlank()) return
 
         val json = JSONObject().apply {
             put("type", "chat_message")
             put("order_id", orderId)
-            put("to_user_id", shipperId) // ✅ ID shipper thật (users.id)
             put("content", content)
         }
 
-        Log.d("ChatVM", "📤 Sending: order=$orderId, to=$shipperId, msg=$content")
         webSocket?.send(json.toString())
 
         val msg = ChatMessage(
-            fromUserId = -1L, // user hiện tại
-            toUserId = shipperId,
+            fromUserId = currentUserId ?: -1L,
+            toUserId = -1L,
             content = content,
             createdAt = System.currentTimeMillis()
         )
-        viewModelScope.launch { appendMessage(orderId, msg) }
+
+        viewModelScope.launch {
+            appendMessage(orderId, msg)
+        }
     }
+
+    /** Gửi tin nhắn từ user sang shipper */
+//    fun sendMessage(orderId: Long, shipperId: Long, content: String) {
+//        if (content.isBlank()) return
+//        if (shipperId == 0L) {
+//            Log.e("ChatVM", "❌ Không thể gửi vì shipperId = 0")
+//            return
+//        }
+//
+//        // 🔍 Thêm dòng log này để kiểm tra shipperId thực tế
+//        Log.d("ChatSend", "🚀 Sending message toUser=$shipperId for order=$orderId")
+//
+//        val json = JSONObject().apply {
+//            put("type", "chat_message")
+//            put("order_id", orderId)
+//            put("to_user_id", shipperId) // ✅ ID shipper thật (users.id)
+//            put("content", content)
+//        }
+//
+//        Log.d("ChatVM", "📤 Sending: order=$orderId, to=$shipperId, msg=$content")
+//        webSocket?.send(json.toString())
+//
+//        val msg = ChatMessage(
+//            fromUserId = -1L, // user hiện tại
+//            toUserId = shipperId,
+//            content = content,
+//            createdAt = System.currentTimeMillis()
+//        )
+//        viewModelScope.launch { appendMessage(orderId, msg) }
+//    }
 
 
     /** Lưu tin nhắn vào bộ nhớ và cache */

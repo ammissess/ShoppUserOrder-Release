@@ -85,10 +85,11 @@ fun MessagesScreen(
                 onTextChange = { inputText = it },
                 onSend = {
                     if (inputText.isNotBlank()) {
-                        viewModel.sendMessage(orderId, shipperId, inputText)
+                        viewModel.sendMessage(orderId, inputText)
                         inputText = ""
                     }
                 }
+
             )
         }
     ) { padding ->
