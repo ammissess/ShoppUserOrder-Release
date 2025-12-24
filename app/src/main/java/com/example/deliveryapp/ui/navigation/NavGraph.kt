@@ -22,6 +22,7 @@ import com.example.deliveryapp.ui.order.CheckoutScreen
 import com.example.deliveryapp.ui.order.CheckoutViewModel
 import com.example.deliveryapp.ui.order.OrderDetailScreen
 import com.example.deliveryapp.ui.order.OrderListScreen
+import com.example.deliveryapp.ui.product.ProductDetailReviewScreen
 import com.example.deliveryapp.ui.profile.CustomProfile
 
 @Composable
@@ -151,6 +152,25 @@ fun NavGraph(
             }
 
             CheckoutScreen(navController, viewModel)  // ← Truyền ViewModel thay vì cart
+        }
+
+        // Màn hình đánh giá sản phẩm sau khi giao hàng
+        composable(
+            route = "product_detail_review/{productId}/{orderId}",
+            arguments = listOf(
+                navArgument("productId") { type = NavType.LongType },
+                navArgument("orderId") { type = NavType.LongType }
+            )
+        ) { backStackEntry ->
+            val productId = backStackEntry.arguments?.getLong("productId") ?: 0L
+            val orderId = backStackEntry.arguments?.getLong("orderId") ?: 0L
+
+            // ✅ Gọi đúng composable
+            ProductDetailReviewScreen(
+                navController = navController,
+                productId = productId,
+                orderId = orderId
+            )
         }
 
         //Route sang màn hình order

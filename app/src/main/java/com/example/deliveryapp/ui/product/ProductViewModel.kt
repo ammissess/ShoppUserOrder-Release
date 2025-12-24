@@ -80,12 +80,30 @@ class ProductViewModel @Inject constructor(
     }
 
     /** Gửi review (rating + comment) */
+//    fun submitReview(orderId: Long, productId: Long, rate: Int, content: String) {
+//        viewModelScope.launch {
+//            repo.createReview(
+//                ReviewRequestDto(product_id = productId, order_id = orderId, rate = rate, content = content)
+//            )
+//            loadReviews(productId) // refresh review sau khi submit
+//        }
+//    }
     fun submitReview(orderId: Long, productId: Long, rate: Int, content: String) {
         viewModelScope.launch {
-            repo.createReview(
-                ReviewRequestDto(product_id = productId, order_id = orderId, rate = rate, content = content)
-            )
-            loadReviews(productId) // refresh review sau khi submit
+            _isLoading.value = true
+            _errorMessage.value = null
+            try {
+                val result = repo.createReview(orderId, productId, rate, content)
+                if (result is Resource.Success) {
+                    loadReviews(productId) // refresh after success
+                } else {
+                    _errorMessage.value = (result as? Resource.Error)?.message ?: "Failed to submit review"
+                }
+            } catch (e: Exception) {
+                _errorMessage.value = e.message ?: "Network error"
+            } finally {
+                _isLoading.value = false
+            }
         }
     }
 }

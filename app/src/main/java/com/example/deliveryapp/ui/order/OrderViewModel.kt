@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.deliveryapp.data.local.DataStoreManager
 import com.example.deliveryapp.data.remote.dto.OrderDetailDto
 import com.example.deliveryapp.data.remote.dto.PlaceOrderRequestDto
+import com.example.deliveryapp.domain.usecase.CancelOrderUseCase
 import com.example.deliveryapp.domain.usecase.GetOrderDetailUseCase
 import com.example.deliveryapp.domain.usecase.PlaceOrderUseCase
 import com.example.deliveryapp.utils.Resource
@@ -20,8 +21,14 @@ import javax.inject.Inject
 class OrderViewModel @Inject constructor(
     private val placeOrderUseCase: PlaceOrderUseCase,
     private val getOrderDetailUseCase: GetOrderDetailUseCase,
-    private val dataStore: DataStoreManager
+    private val dataStore: DataStoreManager,
+    private val cancelOrderUseCase: CancelOrderUseCase, // ✅ Thêm UseCase huy don
 ) : ViewModel() {
+
+    //huy don
+    private val _cancelOrderResult = MutableStateFlow<Resource<String>?>(null)
+    val cancelOrderResult: StateFlow<Resource<String>?> = _cancelOrderResult
+
 
     private val _placeOrderResult = MutableStateFlow<Resource<String>>(Resource.Loading())
     val placeOrderResult: StateFlow<Resource<String>> = _placeOrderResult
@@ -54,30 +61,24 @@ class OrderViewModel @Inject constructor(
         }
     }
 
+    //huy don hang
+    fun cancelOrder(orderId: Long) {
+        viewModelScope.launch {
+            _cancelOrderResult.value = Resource.Loading()
+            val result = cancelOrderUseCase(orderId)
+            _cancelOrderResult.value = result
+
+            // Nếu hủy thành công, load lại chi tiết đơn
+            if (result is Resource.Success) {
+                delay(500) // Delay nhỏ để backend cập nhật
+                loadOrderDetail(orderId)
+            }
+        }
+    }
     /**
      * Polling trạng thái đơn hàng mỗi 5 giây, gọi callback khi thay đổi
      */
-//    fun pollStatus(orderId: Long, onStatusChange: (status: String, shipperId: Long) -> Unit) {
-//        viewModelScope.launch {
-//            pollingActive = true
-//            var lastStatus: String? = null
-//
-//            while (pollingActive) {
-//                val result = getOrderDetailUseCase(orderId)
-//                if (result is Resource.Success) {
-//                    val order = result.data?.order
-//                    val newStatus = order?.order_status ?: ""
-//                    val shipperId = order?.shipper_id ?: 0L
-//
-//                    if (newStatus != lastStatus) {
-//                        lastStatus = newStatus
-//                        onStatusChange(newStatus, shipperId)
-//                    }
-//                }
-//                delay(5000)
-//            }
-//        }
-//    }
+
 
     fun pollStatus(
         orderId: Long,

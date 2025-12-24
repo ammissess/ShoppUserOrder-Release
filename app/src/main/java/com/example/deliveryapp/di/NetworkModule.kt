@@ -85,9 +85,18 @@ object NetworkModule {
     @NormalAuthApi
     fun provideAuthApi(retrofit: Retrofit): AuthApi = retrofit.create(AuthApi::class.java)
 
+//    @Provides
+//    @Singleton
+//    fun provideProductRepository(api: ProductApi): ProductRepository = ProductRepository(api)
+
+    // ✅ Sửa lại: Thêm dataStore parameter
     @Provides
     @Singleton
-    fun provideProductRepository(api: ProductApi): ProductRepository = ProductRepository(api)
+    fun provideProductRepository(
+        api: ProductApi,
+        dataStore: DataStoreManager
+    ): ProductRepository = ProductRepository(api, dataStore)
+
 
     @Provides
     @Singleton

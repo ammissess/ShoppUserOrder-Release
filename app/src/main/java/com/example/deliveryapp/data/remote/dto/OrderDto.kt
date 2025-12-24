@@ -24,19 +24,6 @@ data class OrderDetailDto(
 )
 
 
-//data class OrderDto(
-//    val id: Long,
-//    val user_id: Long,
-//    val order_status: String,
-//    val payment_status: String,
-//    val latitude: Double,
-//    val longitude: Double,
-//    val total_amount: Double,
-//    val thumbnail_id: Long?,
-//    val created_at: String?,
-//    val shipper_id: Long? = null
-//)
-
 data class OrderItemDto(
     val product_id: Long,
     val product_name: String,

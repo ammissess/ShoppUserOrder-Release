@@ -43,6 +43,31 @@ class OrderRepository @Inject constructor(
 //                Resource.Error("Server error")
 //            }
 //        }
+
+    // ✅ Thêm hàm cancelOrder Huy don hang
+    suspend fun cancelOrder(orderId: Long): Resource<String> {
+        return try {
+            val response = orderApi.cancelOrder(orderId)
+            if (response.isSuccessful) {
+                val message = response.body()?.message ?: "Đã hủy đơn hàng thành công"
+                Resource.Success(message)
+            } else {
+                // Xử lý lỗi từ backend
+                val errorBody = response.errorBody()?.string()
+                val errorMessage = when {
+                    errorBody?.contains("not pending") == true ->
+                        "Không thể hủy đơn hàng, đơn hàng không ở trạng thái chờ xử lý"
+                    errorBody?.contains("not your") == true ->
+                        "Đơn hàng này không thuộc về bạn"
+                    else ->
+                        "Không thể hủy đơn hàng"
+                }
+                Resource.Error(errorMessage)
+            }
+        } catch (e: Exception) {
+            Resource.Error(e.message ?: "Lỗi kết nối khi hủy đơn hàng")
+        }
+    }
         suspend fun placeOrder(req: PlaceOrderRequestDto): Resource<String> =
             withContext(Dispatchers.IO) {
                 try {

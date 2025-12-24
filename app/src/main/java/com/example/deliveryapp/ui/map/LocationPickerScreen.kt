@@ -57,10 +57,14 @@ fun LocationPickerScreen(
     var showSearch by remember { mutableStateOf(false) }
     var isLoadingCurrentLocation by remember { mutableStateOf(false) }
     var mapReady by remember { mutableStateOf(false) }
-
     LaunchedEffect(Unit) {
+        // Trì hoãn 500ms để tránh tranh chấp tài nguyên khi app vừa mở
+        kotlinx.coroutines.delay(2000)
         mapReady = true
     }
+//    LaunchedEffect(Unit) {
+//        mapReady = true
+//    }
 
     val coroutineScope = rememberCoroutineScope()
     val pinIcon = rememberIconImage(resourceId = R.drawable.ic_locationn)

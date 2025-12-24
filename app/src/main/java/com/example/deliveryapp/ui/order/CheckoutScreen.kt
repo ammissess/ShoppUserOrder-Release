@@ -1,31 +1,36 @@
 package com.example.deliveryapp.ui.order
 
 import android.util.Log
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
+import androidx.navigation.compose.currentBackStackEntryAsState
 import coil.compose.AsyncImage
 import com.example.deliveryapp.ui.home.CartItem
 import com.example.deliveryapp.ui.home.formatPrice
 import com.example.deliveryapp.utils.Resource
 import kotlinx.coroutines.delay
-import androidx.compose.runtime.SideEffect
-import androidx.compose.ui.graphics.Color
-import androidx.lifecycle.compose.LocalLifecycleOwner
-import androidx.navigation.compose.currentBackStackEntryAsState
-import androidx.compose.material.icons.filled.CheckCircle
 
 private const val TAG = "CheckoutDebug"
 
@@ -35,45 +40,35 @@ fun CheckoutScreen(
     navController: NavController,
     viewModel: CheckoutViewModel = hiltViewModel()
 ) {
+    // 1. Lấy dữ liệu từ màn hình trước và ViewModel
     val cart = navController.previousBackStackEntry?.savedStateHandle?.get<List<CartItem>>("checkout_cart") ?: emptyList()
-
-    // Lấy savedStateHandle từ CheckoutScreen
-   // val savedStateHandle = navController.currentBackStackEntry?.savedStateHandle
-
-    var paymentMethod by remember { mutableStateOf("unpaid") }
-    var showEditDialog by remember { mutableStateOf(false) }
-    var editName by remember { mutableStateOf("") }
-    var editPhone by remember { mutableStateOf("") }
-
     val profileState by viewModel.profileState.collectAsState()
     val confirmState by viewModel.confirmOrderState.collectAsState()
     val deliveryInfo by viewModel.deliveryInfo.collectAsState()
 
-    // ✅ Load profile chỉ 1 lần
-    LaunchedEffect(Unit) {
-        Log.d(TAG, "Loading profile...")
-        viewModel.loadProfile()
-    }
     val navBackStackEntry = navController.currentBackStackEntryAsState().value
     val savedStateHandle = navBackStackEntry?.savedStateHandle
     val lifecycleOwner = LocalLifecycleOwner.current
 
-    // Thêm state để quản lý dialog (sau các state khác)
+    var paymentMethod by remember { mutableStateOf("unpaid") }
+    var showEditDialog by remember { mutableStateOf(false) }
     var showSuccessDialog by remember { mutableStateOf(false) }
 
-// Nhận dữ liệu từ LocationPickerScreen khi quay lại
+    // Tính toán tiền
+    val subTotal = remember(cart) { cart.sumOf { it.product.price * it.quantity } }
+    val shippingFee = 00000.0
+    val totalAmount = subTotal + shippingFee
+
+    // 2. LOGIC: Nhận địa chỉ từ bản đồ gửi về
     LaunchedEffect(savedStateHandle) {
         navBackStackEntry?.savedStateHandle?.let { handle ->
             handle.getLiveData<Double>("selectedLat").observe(lifecycleOwner) { lat ->
                 val lng = handle.get<Double>("selectedLng")
                 val address = handle.get<String>("selectedAddress")
 
-                Log.d("CheckoutDebug", "📍 Received from LocationPicker: lat=$lat, lng=$lng, address=$address")
-
                 if (lat != null && lng != null && address != null) {
                     viewModel.updateDeliveryAddress(lat, lng, address)
-
-                    // ✅ Xóa key sau khi dùng
+                    // Xóa dữ liệu tạm để tránh lặp logic
                     handle.remove<Double>("selectedLat")
                     handle.remove<Double>("selectedLng")
                     handle.remove<String>("selectedAddress")
@@ -82,31 +77,16 @@ fun CheckoutScreen(
         }
     }
 
-    // Xử lý kết quả đặt hàng
-    LaunchedEffect(confirmState) {
-        if (confirmState is Resource.Success && (confirmState as Resource.Success).data?.isNotEmpty() == true) {
-            navController.previousBackStackEntry?.savedStateHandle?.set("clear_cart", true)
-            delay(1000)
-            navController.navigate("home") {
-                popUpTo("home") { inclusive = true }
-            }
-        }
+    LaunchedEffect(Unit) {
+        viewModel.loadProfile()
+        viewModel.resetConfirmState()
     }
 
-    // Load profile vào EditDialog
-    LaunchedEffect(profileState, showEditDialog) {
-        if (showEditDialog && profileState is Resource.Success) {
-            val profile = (profileState as Resource.Success).data
-            editName = profile?.name ?: ""
-            editPhone = profile?.phone ?: ""
-        }
-    }
-
-    // Cập nhật LaunchedEffect xử lý kết quả đặt hàng
+    // Xử lý khi đặt hàng thành công
     LaunchedEffect(confirmState) {
         if (confirmState is Resource.Success && (confirmState as Resource.Success).data?.isNotEmpty() == true) {
-            showSuccessDialog = true  // ✅ Hiển thị dialog trước
-            delay(2000)  // Đợi 2 giây để user thấy thông báo
+            showSuccessDialog = true
+            delay(2000)
             navController.previousBackStackEntry?.savedStateHandle?.set("clear_cart", true)
             navController.navigate("home") {
                 popUpTo("home") { inclusive = true }
@@ -114,80 +94,227 @@ fun CheckoutScreen(
         }
     }
 
+    Scaffold(
+        topBar = {
+            CenterAlignedTopAppBar(
+                title = { Text("Xác nhận đơn hàng", style = MaterialTheme.typography.titleMedium) },
+                navigationIcon = {
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = null)
+                    }
+                },
+                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = Color.White)
+            )
+        },
+        bottomBar = {
+            // THANH THANH TOÁN CỐ ĐỊNH PHÍA DƯỚI
+            Surface(tonalElevation = 8.dp, shadowElevation = 16.dp, color = Color.White) {
+                Column(modifier = Modifier.navigationBarsPadding().padding(16.dp)) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Tổng cộng", style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            formatPrice(totalAmount),
+                            style = MaterialTheme.typography.headlineSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
 
-    // Edit Dialog
-    if (showEditDialog) {
-        AlertDialog(
-            onDismissRequest = { showEditDialog = false },
-            title = { Text("Chỉnh sửa thông tin người nhận") },
-            text = {
-                Column {
-                    OutlinedTextField(
-                        value = editName,
-                        onValueChange = { editName = it },
-                        label = { Text("Tên người nhận") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = editPhone,
-                        onValueChange = { editPhone = it },
-                        label = { Text("Số điện thoại") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    viewModel.updateReceiverInfo(editName, editPhone)
-                    showEditDialog = false
-                }) {
-                    Text("Lưu")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showEditDialog = false }) {
-                    Text("Hủy")
+                    // 1. Kiểm tra trạng thái đơn hàng (Đang xử lý hoặc Đã thành công)
+                    val isOrderProcessed = confirmState is Resource.Success && !confirmState.data.isNullOrEmpty()
+                    val isLoading = confirmState is Resource.Loading
+
+                    Button(
+                        onClick = { viewModel.confirmOrder(cart, paymentMethod) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(56.dp),
+                        // ✅ CẬP NHẬT ĐIỀU KIỆN ENABLED
+                        enabled = !isLoading && // Không cho nhấn khi đang load [cite: 128]
+                                !isOrderProcessed && // Không cho nhấn khi đã đặt hàng thành công
+                                deliveryInfo.latitude != null && // Bắt buộc có tọa độ [cite: 128]
+                                deliveryInfo.latitude != 0.0 &&
+                                !deliveryInfo.address.isNullOrBlank(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color.Black,
+                            disabledContainerColor = Color.Gray, // Màu xám khi bị vô hiệu hóa
+                            disabledContentColor = Color.White
+                        )
+                    ) {
+                        if (isLoading) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(24.dp),
+                                color = Color.White,
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Text(
+                                text = when {
+                                    isOrderProcessed -> "ĐANG ĐẶT HÀNG"
+                                    deliveryInfo.latitude == null || deliveryInfo.latitude == 0.0 -> "Cần chọn vị trí trên bản đồ"
+                                    deliveryInfo.address.isNullOrBlank() -> "Địa chỉ không hợp lệ"
+                                    else -> "ĐẶT HÀNG"
+                                },
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                        }
+                    }
                 }
             }
-        )
+        }
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color(0xFFF8F8F8))
+                .padding(padding)
+                .verticalScroll(rememberScrollState())
+        ) {
+            // 3. THÔNG TIN NHẬN HÀNG
+            SectionHeader(title = "Địa chỉ nhận hàng")
+            Card(
+                modifier = Modifier.padding(horizontal = 16.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            ) {
+                Column(Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Place, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.width(8.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                text = deliveryInfo.name ?: (profileState as? Resource.Success)?.data?.name ?: "Người nhận",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = deliveryInfo.phone ?: (profileState as? Resource.Success)?.data?.phone ?: "Chưa có SĐT",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = Color.Gray
+                            )
+                        }
+                        IconButton(onClick = { showEditDialog = true }) {
+                            Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(20.dp))
+                        }
+                    }
+
+                    Divider(Modifier.padding(vertical = 12.dp), thickness = 0.5.dp)
+
+                    // HIỂN THỊ ĐỊA CHỈ VÀ TỌA ĐỘ
+                    if (deliveryInfo.address.isNullOrEmpty()) {
+                        OutlinedButton(
+                            onClick = { navController.navigate("location_picker") },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(8.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                        ) {
+                            Icon(imageVector = Icons.Default.Place, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Chọn vị trí trên bản đồ")
+                        }
+                    } else {
+                        Column {
+                            Text(text = deliveryInfo.address!!, style = MaterialTheme.typography.bodyMedium, lineHeight = 20.sp)
+
+                            // Dòng tọa độ hiển thị trên Card
+                            Text(
+                                text = "Tọa độ: ${String.format("%.5f", deliveryInfo.latitude)}, ${String.format("%.5f", deliveryInfo.longitude)}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(top = 4.dp)
+                            )
+
+                            TextButton(
+                                onClick = { navController.navigate("location_picker") },
+                                contentPadding = PaddingValues(0.dp)
+                            ) {
+                                Text("Thay đổi địa chỉ", style = MaterialTheme.typography.labelLarge)
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 4. DANH SÁCH SẢN PHẨM
+            SectionHeader(title = "Sản phẩm")
+            Card(
+                modifier = Modifier.padding(horizontal = 16.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White)
+            ) {
+                Column(Modifier.padding(16.dp)) {
+                    cart.forEachIndexed { index, item ->
+                        Row(
+                            Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Card(shape = RoundedCornerShape(8.dp)) {
+                                AsyncImage(
+                                    model = item.product.images.firstOrNull()?.url,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(50.dp),
+                                    contentScale = ContentScale.Crop
+                                )
+                            }
+                            Spacer(Modifier.width(12.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(item.product.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text("Số lượng: ${item.quantity}", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                            }
+                            Text(formatPrice(item.product.price * item.quantity), fontWeight = FontWeight.Medium)
+                        }
+                        if (index < cart.size - 1) Divider(thickness = 0.5.dp, color = Color(0xFFEEEEEE))
+                    }
+                }
+            }
+
+            // 5. THANH TOÁN
+            SectionHeader(title = "Phương thức thanh toán")
+            Card(
+                modifier = Modifier.padding(horizontal = 16.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color(0xFF4CAF50))
+                    Spacer(Modifier.width(12.dp))
+                    Text("Thanh toán khi nhận hàng (COD)", modifier = Modifier.weight(1f))
+                    RadioButton(selected = paymentMethod == "unpaid", onClick = { paymentMethod = "unpaid" })
+                }
+            }
+
+            // 6. CHI TIẾT GIÁ
+            SectionHeader(title = "Chi tiết thanh toán")
+            Column(Modifier.padding(horizontal = 24.dp, vertical = 8.dp)) {
+                PriceRow("Tạm tính", formatPrice(subTotal))
+                PriceRow("Phí vận chuyển", formatPrice(shippingFee))
+                PriceRow("Tổng cộng", formatPrice(totalAmount), isBold = true)
+            }
+
+            Spacer(Modifier.height(100.dp))
+        }
     }
 
+    // Dialog đặt hàng thành công
     if (showSuccessDialog) {
         AlertDialog(
-            onDismissRequest = { /* Không cho đóng khi click ngoài */ },
-            icon = {
-                Icon(
-                    imageVector = Icons.Default.CheckCircle,
-                    contentDescription = "Success",
-                    tint = Color(0xFF4CAF50),  // Màu xanh lá
-                    modifier = Modifier.size(64.dp)
-                )
-            },
-            title = {
-                Text(
-                    text = "Đặt hàng thành công!",
-                    style = MaterialTheme.typography.headlineSmall,
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                )
-            },
+            onDismissRequest = { },
+            icon = { Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color(0xFF4CAF50), modifier = Modifier.size(64.dp)) },
+            title = { Text(text = "Đặt hàng thành công!", style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center) },
             text = {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        text = "Đơn hàng của bạn đã được xác nhận",
-                        style = MaterialTheme.typography.bodyMedium,
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                    )
+                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                    Text(text = "Đơn hàng của bạn đã được xác nhận", style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
                     Spacer(Modifier.height(8.dp))
-                    Text(
-                        text = "Cảm ơn bạn đã tin tưởng sử dụng dịch vụ!",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                    )
+                    Text(text = "Cảm ơn bạn đã tin tưởng sử dụng dịch vụ!", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
                 }
             },
             confirmButton = {
@@ -195,14 +322,10 @@ fun CheckoutScreen(
                     onClick = {
                         showSuccessDialog = false
                         navController.previousBackStackEntry?.savedStateHandle?.set("clear_cart", true)
-                        navController.navigate("home") {
-                            popUpTo("home") { inclusive = true }
-                        }
+                        navController.navigate("home") { popUpTo("home") { inclusive = true } }
                     },
                     modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFF4CAF50)
-                    )
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50))
                 ) {
                     Text("Về trang chủ")
                 }
@@ -211,306 +334,30 @@ fun CheckoutScreen(
             shape = RoundedCornerShape(16.dp)
         )
     }
+}
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Xác nhận đơn hàng") },
-                navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
-                    }
-                }
-            )
-        }
-    ) { padding ->
-        when (val profile = profileState) {
-            is Resource.Loading -> {
-                Box(Modifier.fillMaxSize().padding(padding), Alignment.Center) {
-                    CircularProgressIndicator()
-                }
-            }
-            is Resource.Error -> {
-                Box(Modifier.fillMaxSize().padding(padding), Alignment.Center) {
-                    Text("Lỗi: ${profile.message}")
-                }
-            }
-            is Resource.Success -> {
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(padding)
-                        .verticalScroll(rememberScrollState())
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-// Thông tin nhận hàng (update hiển thị từ deliveryInfo)
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        elevation = CardDefaults.cardElevation(2.dp)
-                    ) {
-                        Column(Modifier.padding(16.dp)) {
-                            Row(
-                                Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text("Thông tin nhận hàng", style = MaterialTheme.typography.titleMedium)
-                                Row {
-                                    IconButton(onClick = { showEditDialog = true }) {
-                                        Icon(Icons.Default.Edit, contentDescription = "Chỉnh sửa thông tin")
-                                    }
-                                    IconButton(onClick = { navController.navigate("location_picker") }) {
-                                        Icon(Icons.Default.Place, contentDescription = "Chỉnh sửa địa chỉ")
-                                    }
-                                }
-                            }
-                            Spacer(Modifier.height(8.dp))
+@Composable
+fun SectionHeader(title: String) {
+    Text(
+        text = title,
+        modifier = Modifier.padding(start = 20.dp, top = 20.dp, bottom = 8.dp),
+        style = MaterialTheme.typography.titleSmall,
+        color = Color.Gray,
+        fontWeight = FontWeight.Bold
+    )
+}
 
-                            Text("Người nhận: ${deliveryInfo.name ?: profile.data?.name ?: ""}")
-                            Text("SĐT: ${deliveryInfo.phone ?: profile.data?.phone ?: "Chưa cập nhật"}")
-
-                            Spacer(Modifier.height(8.dp))
-
-                            Row(verticalAlignment = Alignment.Top) {
-                                Icon(
-                                    Icons.Default.Place,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                                Spacer(Modifier.width(4.dp))
-                                Column {
-                                    // ✅ Chỉ hiển thị địa chỉ từ LocationPickerScreen
-                                    Text(
-                                        text = if (!deliveryInfo.address.isNullOrEmpty()) {
-                                            deliveryInfo.address!!
-                                        } else {
-                                            "⚠️ Chưa chọn địa chỉ giao hàng"
-                                        },
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = if (!deliveryInfo.address.isNullOrEmpty()) {
-                                            MaterialTheme.colorScheme.onSurface
-                                        } else {
-                                            MaterialTheme.colorScheme.error
-                                        }
-                                    )
-
-                                    Spacer(Modifier.height(4.dp))
-
-                                    // Hiển thị Latitude
-                                    Text(
-                                        text = if (deliveryInfo.latitude != null) {
-                                            "Latitude: ${String.format("%.6f", deliveryInfo.latitude)}"
-                                        } else {
-                                            "Latitude: Chưa có dữ liệu"
-                                        },
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = if (deliveryInfo.latitude != null)
-                                            MaterialTheme.colorScheme.primary
-                                        else
-                                            MaterialTheme.colorScheme.error
-                                    )
-
-                                    // Hiển thị Longitude
-                                    Text(
-                                        text = if (deliveryInfo.longitude != null) {
-                                            "Longitude: ${String.format("%.6f", deliveryInfo.longitude)}"
-                                        } else {
-                                            "Longitude: Chưa có dữ liệu"
-                                        },
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = if (deliveryInfo.longitude != null)
-                                            MaterialTheme.colorScheme.primary
-                                        else
-                                            MaterialTheme.colorScheme.error
-                                    )
-                                }
-                            }
-
-// Cảnh báo nếu chưa chọn vị trí (cập nhật điều kiện)
-                            if (deliveryInfo.latitude == null || deliveryInfo.longitude == null || deliveryInfo.address.isNullOrEmpty()) {
-                                Spacer(Modifier.height(8.dp))
-                                Card(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    colors = CardDefaults.cardColors(
-                                        containerColor = MaterialTheme.colorScheme.errorContainer
-                                    )
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(12.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Icon(
-                                            Icons.Default.Place,
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.error,
-                                            modifier = Modifier.size(20.dp)
-                                        )
-                                        Spacer(Modifier.width(8.dp))
-                                        Text(
-                                            "Vui lòng chọn vị trí giao hàng từ bản đồ",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onErrorContainer
-                                        )
-                                    }
-                                }}}}
-
-
-
-
-
-                    // Danh sách sản phẩm (giữ nguyên)
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        elevation = CardDefaults.cardElevation(2.dp)
-                    ) {
-                        Column(Modifier.padding(16.dp)) {
-                            Text("Sản phẩm đã chọn", style = MaterialTheme.typography.titleMedium)
-                            Spacer(Modifier.height(8.dp))
-
-                            cart.forEach { item ->
-                                Row(
-                                    Modifier
-                                        .fillMaxWidth()
-                                        .padding(vertical = 8.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    AsyncImage(
-                                        model = item.product.images.firstOrNull()?.url,
-                                        contentDescription = item.product.name,
-                                        modifier = Modifier.size(60.dp)
-                                    )
-                                    Spacer(Modifier.width(12.dp))
-                                    Column(Modifier.weight(1f)) {
-                                        Text(item.product.name, style = MaterialTheme.typography.bodyLarge)
-                                        Text("x${item.quantity}", style = MaterialTheme.typography.bodyMedium)
-                                    }
-                                    Text(
-                                        formatPrice(item.product.price * item.quantity),
-                                        style = MaterialTheme.typography.titleSmall,
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
-                                }
-                                if (cart.last() != item) Divider()
-                            }
-                        }
-                    }
-
-                    // Phương thức thanh toán (giữ nguyên)
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        elevation = CardDefaults.cardElevation(2.dp)
-                    ) {
-                        Column(Modifier.padding(16.dp)) {
-                            Text("Phương thức thanh toán", style = MaterialTheme.typography.titleMedium)
-                            Spacer(Modifier.height(12.dp))
-
-                            Row(
-                                Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                RadioButton(
-                                    selected = paymentMethod == "unpaid",
-                                    onClick = { paymentMethod = "unpaid" }
-                                )
-                                Text("Thanh toán khi nhận hàng")
-                            }
-
-                            Row(
-                                Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                RadioButton(
-                                    selected = paymentMethod == "paid",
-                                    onClick = { paymentMethod = "paid" }
-                                )
-                                Text("Chuyển khoản")
-                            }
-                        }
-                    }
-
-                    // Tổng tiền (giữ nguyên)
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.primaryContainer
-                        )
-                    ) {
-                        Row(
-                            Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text("Tổng cộng:", style = MaterialTheme.typography.titleLarge)
-                            Text(
-                                formatPrice(cart.sumOf { it.product.price * it.quantity }),
-                                style = MaterialTheme.typography.titleLarge,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                    }
-
-                    // Nút xác nhận (giữ nguyên, nhưng thêm log)
-                    Button(
-                        onClick = {
-                            Log.d(TAG, "Confirm order: lat=${deliveryInfo.latitude}, lng=${deliveryInfo.longitude}, address=${deliveryInfo.address}")
-                            viewModel.confirmOrder(
-                                cart = cart,
-                                paymentMethod = paymentMethod
-                            )
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        enabled = confirmState !is Resource.Loading &&
-                                deliveryInfo.latitude != null &&
-                                deliveryInfo.longitude != null &&
-                                !deliveryInfo.address.isNullOrEmpty() &&
-                                !deliveryInfo.name.isNullOrBlank() &&
-                                !deliveryInfo.phone.isNullOrBlank(),
-                       colors = ButtonDefaults.buttonColors( containerColor = Color.Black, contentColor = Color.White),
-                        shape = RoundedCornerShape(8.dp)
-                    ){
-                        when (confirmState) {
-                            is Resource.Loading -> {
-                                Row(
-                                    horizontalArrangement = Arrangement.Center,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    CircularProgressIndicator(
-                                        modifier = Modifier.size(20.dp),
-                                        color = MaterialTheme.colorScheme.onPrimary
-                                    )
-                                    Spacer(Modifier.width(8.dp))
-                                    Text("Đang xử lý...")
-                                }
-                            }
-
-                            is Resource.Error -> {
-                                Text("Thử lại")
-
-                                // Thông báo lỗi
-                                Card(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    colors = CardDefaults.cardColors(
-                                        containerColor = MaterialTheme.colorScheme.errorContainer
-                                    )
-                                ) {
-                                    Text(
-                                        text = (confirmState as Resource.Error).message ?: "Lỗi đặt hàng",
-                                        modifier = Modifier.padding(16.dp),
-                                        color = MaterialTheme.colorScheme.onErrorContainer
-                                    )
-                                }
-                            }
-
-                            is Resource.Success -> {
-                                Text("Xác nhận đặt hàng")
-                            }
-                            else -> Text("Xác nhận đặt hàng")
-                        }
-                    }
-                }
-            }
-        }
+@Composable
+fun PriceRow(label: String, value: String, isBold: Boolean = false) {
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(label, color = if (isBold) Color.Black else Color.Gray)
+        Text(
+            value,
+            fontWeight = if (isBold) FontWeight.ExtraBold else FontWeight.Normal,
+            style = if (isBold) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyMedium
+        )
     }
 }

@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.deliveryapp.data.remote.api.ChatApi
 import com.example.deliveryapp.utils.Constants
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
@@ -19,8 +20,10 @@ import javax.inject.Inject
 
 @HiltViewModel
 class ChatViewModel @Inject constructor(
-    @ApplicationContext private val appContext: Context
-) : ViewModel() {
+    @ApplicationContext private val appContext: Context,
+    private val chatApi: ChatApi
+) : ViewModel(){
+
 
 //    private val _conversations = MutableStateFlow<Map<Long, MutableList<ChatMessage>>>(emptyMap())
 //    val conversations: StateFlow<Map<Long, MutableList<ChatMessage>>> = _conversations
@@ -39,6 +42,59 @@ class ChatViewModel @Inject constructor(
     init {
         loadCachedConversations()
     }
+
+    //hàm sử lý chuỗi thời gian
+    private fun parseCreatedAt(value: String): Long {
+        return try {
+            val formatter = java.text.SimpleDateFormat(
+                "yyyy-MM-dd HH:mm:ss",
+                java.util.Locale.getDefault()
+            )
+            formatter.parse(value)?.time ?: System.currentTimeMillis()
+        } catch (e: Exception) {
+            System.currentTimeMillis()
+        }
+    }
+
+
+    //Load tin nhan
+    fun loadMessagesFromServer(orderId: Long) {
+        viewModelScope.launch {
+            try {
+                Log.d("ChatVM", "📥 Loading messages from DB for order=$orderId")
+
+                val res = chatApi.getMessages(orderId, limit = 50)
+
+                if (res.isSuccessful) {
+                    val serverMessages = res.body()?.messages ?: emptyList()
+
+                    // Convert DTO → ChatMessage
+                    val mapped = serverMessages.map {
+                        ChatMessage(
+                            fromUserId = it.from_user_id,
+                            toUserId = it.to_user_id,
+                            content = it.content,
+                            createdAt = parseCreatedAt(it.created_at)
+                        )
+
+                    }
+
+                    // ⚠️ Ghi đè theo orderId (DB là nguồn chuẩn)
+                    _conversations.value =
+                        _conversations.value + (orderId to mapped)
+
+                    saveConversation(orderId, mapped)
+
+                    Log.d("ChatVM", "✅ Loaded ${mapped.size} messages from DB")
+                } else {
+                    Log.e("ChatVM", "❌ Load DB failed: ${res.code()}")
+                }
+            } catch (e: Exception) {
+                Log.e("ChatVM", "❌ Load DB exception", e)
+            }
+        }
+    }
+
 
     /** Kết nối WebSocket bằng token người dùng */
     fun connectWebSocket(orderId: Long, accessToken: String) {

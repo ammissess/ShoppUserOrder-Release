@@ -15,15 +15,29 @@ data class ProductDto(
     @SerializedName("qty_sold") val qty_sold: Long?,
     @SerializedName("created_at") val created_at: Date?,
     val images: List<ProductImageDto> = emptyList(),
-    val avgRate: Double = 0.0,
-    val reviewCount: Int = 0
+    val avg_rate: Double = 0.0,
+    val review_count: Int = 0
 ) : Parcelable
+
+//@Parcelize
+//data class ProductImageDto(
+//    @SerializedName("ID") val id: Long,
+//    @SerializedName("URL") val url: String,
+//    @SerializedName("IsMain") val is_main: Boolean
+//) : Parcelable
+
+
+//@Parcelize
+//data class ProductImageDto(
+//    @SerializedName("id") val id: Long,
+//    @SerializedName("url") val url: String,
+//    @SerializedName("is_main") val isMain: Boolean
+//) : Parcelable
+
 
 @Parcelize
 data class ProductImageDto(
-    @SerializedName("ID") val id: Long,
-    @SerializedName("URL") val url: String,
-    @SerializedName("IsMain") val is_main: Boolean
+    @SerializedName(value = "id", alternate = ["ID"]) val id: Long,
+    @SerializedName(value = "url", alternate = ["URL"]) val url: String,
+    @SerializedName(value = "is_main", alternate = ["IsMain"]) val isMain: Boolean
 ) : Parcelable
-
-

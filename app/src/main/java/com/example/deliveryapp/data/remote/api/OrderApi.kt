@@ -6,6 +6,7 @@ import dagger.Provides
 import retrofit2.Response
 import retrofit2.Retrofit
 import retrofit2.http.Body
+import retrofit2.http.DELETE
 import retrofit2.http.GET
 import retrofit2.http.POST
 import retrofit2.http.Path
@@ -22,6 +23,14 @@ interface OrderApi {
     //@GET("orders/{id}")
     @GET("customer/orders/{id}")
     suspend fun getOrderDetail(@Path("id") id: Long): Response<OrderDetailDto>
+
+    //Huy don hang
+    @DELETE("customer/orders/{id}")
+    suspend fun cancelOrder(
+        @Path("id") orderId: Long
+    ): Response<MessageResponse>
+
+
 }
 
 data class PlaceOrderResponse(val message: String)
@@ -33,3 +42,7 @@ data class OrderSummaryDto(
     val thumbnail: String?
 )
 
+// ✅ Thêm MessageResponse cho cancel order
+data class MessageResponse(
+    val message: String
+)

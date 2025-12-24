@@ -56,11 +56,23 @@ fun MessagesScreen(
     val scope = rememberCoroutineScope()
 
     // Kết nối Socket
+//    LaunchedEffect(orderId, token) {
+//        if (token.isNotEmpty()) {
+//            viewModel.connectWebSocket(orderId, token)
+//        }
+//    }
+
+    //sửa load tin nhắn khi kết nối socket hoặc bật lại
     LaunchedEffect(orderId, token) {
         if (token.isNotEmpty()) {
+            // 1️⃣ Load DB trước
+            viewModel.loadMessagesFromServer(orderId)
+
+            // 2️⃣ Sau đó mới connect WS
             viewModel.connectWebSocket(orderId, token)
         }
     }
+
 
     // Tự động cuộn xuống dưới cùng khi danh sách tin nhắn thay đổi
     LaunchedEffect(currentList.size) {

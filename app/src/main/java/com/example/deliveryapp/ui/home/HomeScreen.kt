@@ -50,6 +50,9 @@ fun HomeScreen(
     navController: NavController,
     homeViewModel: HomeViewModel = hiltViewModel()
 ) {
+
+    val gridState = rememberLazyGridState()
+
     val scope = rememberCoroutineScope()
     val drawerState = rememberDrawerState(DrawerValue.Closed)
 
@@ -155,14 +158,17 @@ fun HomeScreen(
                         is Resource.Success -> {
                             val products = productsState.data ?: emptyList()
                             LazyVerticalGrid(
-                                state = rememberLazyGridState(),
+                                state = gridState,
                                 columns = GridCells.Fixed(2),
                                 contentPadding = PaddingValues(8.dp),
                                 verticalArrangement = Arrangement.spacedBy(8.dp),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                modifier = Modifier.fillMaxSize()
+                                modifier = Modifier.fillMaxSize().weight(1f)
                             ) {
-                                items(products, key = { it.id }) { product: ProductDto ->
+                                items(
+                                    items = products,
+                                    key = { product -> product.id } // ✅ DUY NHẤT
+                                ) { product ->
                                     ProductItemDelivery(
                                         product = product,
                                         quantity = homeViewModel.getCartQuantity(product.id),
@@ -209,6 +215,24 @@ fun HomeScreen(
             }
         }
     }
+
+
+    val products: List<ProductDto> = when (productsState) {
+        is Resource.Success -> productsState.data ?: emptyList()
+        else -> emptyList()
+    }
+
+
+    LaunchedEffect(gridState, products.size){
+        snapshotFlow { gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index }
+            .collect { lastIndex ->
+                val total = products.size
+                if (lastIndex != null && lastIndex >= total - 4) {
+                    homeViewModel.loadMoreProducts()
+                }
+            }
+    }
+
     // Lắng nghe sự kiện xóa giỏ hàng từ màn hình Checkout
     LaunchedEffect(navController) {
         navController.currentBackStackEntry?.savedStateHandle?.get<Boolean>("clear_cart")?.let {
@@ -254,8 +278,9 @@ fun ProductItemDelivery(
                 .fillMaxHeight()
                 .padding(12.dp)
         ) {
+
             // Ảnh
-            val mainImage = product.images.firstOrNull { it.is_main }?.url
+            val mainImage = product.images.firstOrNull { it.isMain }?.url
                 ?: product.images.firstOrNull()?.url
 
             AsyncImage(
@@ -285,7 +310,7 @@ fun ProductItemDelivery(
 
             // ⭐ Rating
             Row(verticalAlignment = Alignment.CenterVertically) {
-                val avgRate = (product.avgRate ?: 0).toInt().coerceIn(0, 5)
+                val avgRate = (product.avg_rate ?: 0).toInt().coerceIn(0, 5)
                 repeat(avgRate) {
                     Icon(Icons.Default.Star, contentDescription = null, tint = Color.Yellow, modifier = Modifier.size(14.dp))
                 }
@@ -293,7 +318,7 @@ fun ProductItemDelivery(
                     Icon(Icons.Default.Star, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(14.dp))
                 }
                 Spacer(Modifier.width(4.dp))
-                Text("(${product.reviewCount ?: 0})", style = MaterialTheme.typography.bodySmall)
+                Text("(${product.review_count ?: 0})", style = MaterialTheme.typography.bodySmall)
             }
 
             Spacer(Modifier.height(4.dp))
