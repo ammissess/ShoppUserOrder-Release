@@ -1,5 +1,6 @@
 package com.example.deliveryapp.ui.message
 
+import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -26,13 +27,12 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.example.deliveryapp.data.local.DataStoreManager
-import com.example.deliveryapp.ui.message.ChatMessage // Giả sử model của bạn nằm ở đây
+import com.example.deliveryapp.ui.order.OrderViewModel
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
-// --- ĐỊNH NGHĨA MÀU SẮC CHỦ ĐẠO ---
-val ChatBlue = Color(0xFF007AFF) // Xanh dương hiện đại
-val ChatGray = Color(0xFFF2F2F7) // Xám nhạt cho nền tin nhắn đối phương
+val ChatBlue = Color(0xFF007AFF)
+val ChatGray = Color(0xFFF2F2F7)
 val TextBlack = Color(0xFF1C1C1E)
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -41,6 +41,7 @@ fun MessagesScreen(
     navController: NavController,
     orderId: Long,
     shipperId: Long,
+    //shipperName: String?,
     viewModel: ChatViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
@@ -51,30 +52,39 @@ fun MessagesScreen(
     val currentList = messages[orderId] ?: emptyList()
     var inputText by remember { mutableStateOf("") }
 
-    // State để quản lý việc cuộn danh sách
+    // ✅ Lấy currentUserId từ ViewModel
+    val currentUserId = viewModel.currentUserId
+
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
 
-    // Kết nối Socket
-//    LaunchedEffect(orderId, token) {
-//        if (token.isNotEmpty()) {
-//            viewModel.connectWebSocket(orderId, token)
-//        }
-//    }
+    // Lấy shipperName từ OrderViewModel
 
-    //sửa load tin nhắn khi kết nối socket hoặc bật lại
+    val orderViewModel: OrderViewModel = hiltViewModel()
+    LaunchedEffect(orderId) {
+        orderViewModel.loadOrderDetail(orderId)
+    }
+    val shipperName by orderViewModel.shipperName.collectAsState()
+
     LaunchedEffect(orderId, token) {
         if (token.isNotEmpty()) {
-            // 1️⃣ Load DB trước
+            Log.d("MessagesScreen", "🔑 Token received: ${token.take(20)}...")
+
+            // ✅ 1. Set currentUserId TRƯỚC
+            viewModel.setCurrentUserFromToken(token)
+
+            Log.d("MessagesScreen", "👤 Current User ID after set: ${viewModel.currentUserId}")
+
+            // ✅ 2. Sau đó load messages
             viewModel.loadMessagesFromServer(orderId)
 
-            // 2️⃣ Sau đó mới connect WS
+            // ✅ 3. Cuối cùng connect WebSocket
             viewModel.connectWebSocket(orderId, token)
+        } else {
+            Log.e("MessagesScreen", "❌ Token is empty!")
         }
     }
 
-
-    // Tự động cuộn xuống dưới cùng khi danh sách tin nhắn thay đổi
     LaunchedEffect(currentList.size) {
         if (currentList.isNotEmpty()) {
             listState.animateScrollToItem(currentList.lastIndex)
@@ -82,13 +92,13 @@ fun MessagesScreen(
     }
 
     Scaffold(
-        containerColor = Color.White, // Nền trắng toàn màn hình
+        containerColor = Color.White,
         topBar = {
-            // Top Bar tùy chỉnh đẹp hơn
             ChatTopBar(
                 onBack = { navController.popBackStack() },
-                onCall = { /* Xử lý gọi điện thoại cho shipper */ },
-                shipperName = "Shipper Giao Hàng" // Bạn có thể truyền tên thật vào đây
+                onCall = { },
+               // shipperName = "Shipper Giao Hàng"
+                shipperName = shipperName ?: "Đang chờ shipper"
             )
         },
         bottomBar = {
@@ -101,12 +111,11 @@ fun MessagesScreen(
                         inputText = ""
                     }
                 }
-
             )
         }
     ) { padding ->
         LazyColumn(
-            state = listState, // Gắn state cuộn
+            state = listState,
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
@@ -116,7 +125,11 @@ fun MessagesScreen(
             contentPadding = PaddingValues(top = 16.dp, bottom = 16.dp)
         ) {
             items(currentList) { msg ->
-                ChatBubble(message = msg)
+                // ✅ Truyền currentUserId vào ChatBubble
+                ChatBubble(
+                    message = msg,
+                    currentUserId = currentUserId
+                )
             }
         }
     }
@@ -130,13 +143,12 @@ fun ChatTopBar(
     shipperName: String
 ) {
     Surface(
-        shadowElevation = 4.dp, // Đổ bóng nhẹ ngăn cách header
+        shadowElevation = 4.dp,
         color = Color.White
     ) {
         TopAppBar(
             title = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    // Avatar giả lập
                     Box(
                         modifier = Modifier
                             .size(40.dp)
@@ -164,7 +176,7 @@ fun ChatTopBar(
                             color = TextBlack
                         )
                         Text(
-                            text = "Đang hoạt động", // Hoặc trạng thái đơn hàng
+                            text = "Đang hoạt động",
                             style = MaterialTheme.typography.bodySmall,
                             color = ChatBlue
                         )
@@ -181,7 +193,6 @@ fun ChatTopBar(
                 }
             },
             actions = {
-                // Nút gọi điện đặc trưng của app giao hàng
                 IconButton(onClick = onCall) {
                     Icon(
                         imageVector = Icons.Default.Call,
@@ -198,15 +209,17 @@ fun ChatTopBar(
 }
 
 @Composable
-fun ChatBubble(message: ChatMessage) {
-    // Logic xác định tin nhắn của User (dựa trên code cũ của bạn là -1L)
-    val isUser = message.fromUserId == -1L
+fun ChatBubble(
+    message: ChatMessage,
+    currentUserId: Long? // ✅ Nhận currentUserId
+) {
+    // ✅ Kiểm tra tin nhắn của mình dựa trên currentUserId
+    val isUser = currentUserId != null && message.fromUserId == currentUserId
 
     val backgroundColor = if (isUser) ChatBlue else ChatGray
     val contentColor = if (isUser) Color.White else TextBlack
     val alignment = if (isUser) Alignment.End else Alignment.Start
 
-    // Bo góc: Tin của mình bo góc trái dưới, tin người khác bo góc phải dưới ít hơn
     val bubbleShape = if (isUser) {
         RoundedCornerShape(18.dp, 18.dp, 4.dp, 18.dp)
     } else {
@@ -219,8 +232,8 @@ fun ChatBubble(message: ChatMessage) {
     ) {
         Box(
             modifier = Modifier
-                .widthIn(max = 280.dp) // Giới hạn chiều rộng
-                .shadow(1.dp, shape = bubbleShape, clip = false) // Đổ bóng rất nhẹ
+                .widthIn(max = 280.dp)
+                .shadow(1.dp, shape = bubbleShape, clip = false)
                 .background(backgroundColor, bubbleShape)
                 .padding(horizontal = 14.dp, vertical = 10.dp)
         ) {
@@ -233,7 +246,6 @@ fun ChatBubble(message: ChatMessage) {
                 color = contentColor
             )
         }
-        // Có thể thêm Text hiển thị giờ ở đây nếu Model ChatMessage có field timestamp
     }
 }
 
@@ -244,16 +256,15 @@ fun MessageInputBar(
     onSend: () -> Unit
 ) {
     Surface(
-        tonalElevation = 8.dp, // Đổ bóng cho thanh input nổi lên
+        tonalElevation = 8.dp,
         color = Color.White
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp), // Padding thoáng hơn
+                .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // TextField dạng "viên thuốc"
             TextField(
                 value = text,
                 onValueChange = onTextChange,
@@ -269,7 +280,7 @@ fun MessageInputBar(
                     unfocusedContainerColor = ChatGray,
                     disabledContainerColor = ChatGray,
                     cursorColor = ChatBlue,
-                    focusedIndicatorColor = Color.Transparent, // Ẩn gạch chân
+                    focusedIndicatorColor = Color.Transparent,
                     unfocusedIndicatorColor = Color.Transparent,
                 ),
                 maxLines = 4
@@ -277,7 +288,6 @@ fun MessageInputBar(
 
             Spacer(modifier = Modifier.width(12.dp))
 
-            // Nút gửi hình tròn
             IconButton(
                 onClick = onSend,
                 enabled = text.isNotBlank(),

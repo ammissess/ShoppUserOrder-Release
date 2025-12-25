@@ -14,8 +14,12 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.stateIn
+
 
 @HiltViewModel
 class OrderViewModel @Inject constructor(
@@ -41,6 +45,21 @@ class OrderViewModel @Inject constructor(
 
     private var currentShipperId: Long? = null
     private var pollingActive = false
+
+
+    val shipperName: StateFlow<String?> =
+        _orderDetail
+            .map { resource ->
+                when (resource) {
+                    is Resource.Success -> resource.data?.shipper_info?.name
+                    else -> null
+                }
+            }
+            .stateIn(
+                viewModelScope,
+                SharingStarted.WhileSubscribed(5_000),
+                null
+            )
 
     fun placeOrder(req: PlaceOrderRequestDto) {
         viewModelScope.launch {

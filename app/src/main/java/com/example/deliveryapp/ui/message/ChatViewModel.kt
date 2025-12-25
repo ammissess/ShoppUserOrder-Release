@@ -22,17 +22,13 @@ import javax.inject.Inject
 class ChatViewModel @Inject constructor(
     @ApplicationContext private val appContext: Context,
     private val chatApi: ChatApi
-) : ViewModel(){
+) : ViewModel() {
 
-
-//    private val _conversations = MutableStateFlow<Map<Long, MutableList<ChatMessage>>>(emptyMap())
-//    val conversations: StateFlow<Map<Long, MutableList<ChatMessage>>> = _conversations
-
-    private val _conversations =
-        MutableStateFlow<Map<Long, List<ChatMessage>>>(emptyMap())
-
+    private val _conversations = MutableStateFlow<Map<Long, List<ChatMessage>>>(emptyMap())
     val conversations: StateFlow<Map<Long, List<ChatMessage>>> = _conversations
+
     var currentUserId: Long? = null
+        private set
 
     private var currentOrderId: Long? = null
     private var webSocket: WebSocket? = null
@@ -43,7 +39,6 @@ class ChatViewModel @Inject constructor(
         loadCachedConversations()
     }
 
-    //hàm sử lý chuỗi thời gian
     private fun parseCreatedAt(value: String): Long {
         return try {
             val formatter = java.text.SimpleDateFormat(
@@ -56,36 +51,46 @@ class ChatViewModel @Inject constructor(
         }
     }
 
-
-    //Load tin nhan
     fun loadMessagesFromServer(orderId: Long) {
         viewModelScope.launch {
             try {
-                Log.d("ChatVM", "📥 Loading messages from DB for order=$orderId")
+                Log.d("ChatVM", "🔥 Loading messages from DB for order=$orderId")
+                Log.d("ChatVM", "🔐 Current User ID when loading: $currentUserId") // ✅ Debug
 
                 val res = chatApi.getMessages(orderId, limit = 50)
 
                 if (res.isSuccessful) {
-                    val serverMessages = res.body()?.messages ?: emptyList()
+                    val serverMessages = res.body()?.data ?: emptyList()
 
-                    // Convert DTO → ChatMessage
-                    val mapped = serverMessages.map {
-                        ChatMessage(
-                            fromUserId = it.from_user_id,
-                            toUserId = it.to_user_id,
-                            content = it.content,
-                            createdAt = parseCreatedAt(it.created_at)
-                        )
+                    Log.d("ChatVM", "📦 API Response size: ${serverMessages.size}")
 
+                    // ✅ Debug: In ra message đầu tiên từ API
+                    serverMessages.firstOrNull()?.let { first ->
+                        Log.d("ChatVM", "📦 First API message: from_user=${first.from_user_id}, to_user=${first.to_user_id}, content=${first.content}")
                     }
 
-                    // ⚠️ Ghi đè theo orderId (DB là nguồn chuẩn)
-                    _conversations.value =
-                        _conversations.value + (orderId to mapped)
+                    val mapped = serverMessages.map { msg ->
+                        Log.d("ChatVM", "🔄 Mapping: from_user_id=${msg.from_user_id}, to_user_id=${msg.to_user_id}")
 
+                        ChatMessage(
+                            fromUserId = msg.from_user_id.toLong(),  // ✅ Dùng from_user_id
+                            toUserId = msg.to_user_id.toLong(),      // ✅ Dùng to_user_id
+                            content = msg.content,
+                            createdAt = parseCreatedAt(msg.created_at)
+                        )
+                    }
+                        //.sortedBy { it.createdAt }
+                        .sortedByDescending { it -> it.createdAt }
+
+                    _conversations.value = _conversations.value + (orderId to mapped)
                     saveConversation(orderId, mapped)
 
                     Log.d("ChatVM", "✅ Loaded ${mapped.size} messages from DB")
+
+                    // ✅ Debug: In ra vài tin nhắn đầu tiên
+                    mapped.take(3).forEach {
+                        Log.d("ChatVM", "📨 Message: from=${it.fromUserId}, to=${it.toUserId}, content=${it.content}")
+                    }
                 } else {
                     Log.e("ChatVM", "❌ Load DB failed: ${res.code()}")
                 }
@@ -95,17 +100,26 @@ class ChatViewModel @Inject constructor(
         }
     }
 
+    // ✅ Hàm mới: Set currentUserId từ token
+    fun setCurrentUserFromToken(accessToken: String) {
+        currentUserId = extractUserIdFromToken(accessToken)
+        Log.d("ChatVM", "🔐 Set Current User ID: $currentUserId")
+    }
 
-    /** Kết nối WebSocket bằng token người dùng */
     fun connectWebSocket(orderId: Long, accessToken: String) {
         currentOrderId = orderId
-        currentUserId = extractUserIdFromToken(accessToken)
+
+        // ✅ Đảm bảo currentUserId được set
+        if (currentUserId == null) {
+            setCurrentUserFromToken(accessToken)
+        }
+
         val url = Constants.BASE_URL.replace("http", "ws") + "ws?token=$accessToken"
         val request = Request.Builder().url(url).build()
 
         webSocket = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(ws: WebSocket, response: Response) {
-                Log.d("ChatVM", "✅ WS connected (User)")
+                Log.d("ChatVM", "✅ WS connected (User ID: $currentUserId)")
             }
 
             override fun onMessage(ws: WebSocket, text: String) {
@@ -137,22 +151,38 @@ class ChatViewModel @Inject constructor(
     fun extractUserIdFromToken(token: String): Long? {
         return try {
             val parts = token.split(".")
-            if (parts.size < 2) return null
+            if (parts.size < 2) {
+                Log.e("ChatVM", "❌ Token format invalid")
+                return null
+            }
             val payloadJson = String(
                 android.util.Base64.decode(
                     parts[1],
                     android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP
                 )
             )
+            Log.d("ChatVM", "🔍 Token payload: $payloadJson") // ✅ Debug
+
             val payload = org.json.JSONObject(payloadJson)
-            payload.optLong("user_id", -1L)
+
+            // ✅ Thử nhiều tên field khác nhau
+            val userId = when {
+                payload.has("userID") -> payload.getLong("userID")  // ← API của bạn dùng "userID"
+                payload.has("user_id") -> payload.getLong("user_id")
+                payload.has("userId") -> payload.getLong("userId")
+                payload.has("id") -> payload.getLong("id")
+                else -> -1L
+            }
+
+            Log.d("ChatVM", "🔍 Extracted userID: $userId") // ✅ Debug
+
+            if (userId == -1L) null else userId
         } catch (e: Exception) {
+            Log.e("ChatVM", "❌ Extract token error: ${e.message}")
             null
         }
     }
 
-
-    /** Gửi tin nhắn từ user sang shipper */
     fun sendMessage(orderId: Long, content: String) {
         if (content.isBlank()) return
 
@@ -176,58 +206,16 @@ class ChatViewModel @Inject constructor(
         }
     }
 
-    /** Gửi tin nhắn từ user sang shipper */
-//    fun sendMessage(orderId: Long, shipperId: Long, content: String) {
-//        if (content.isBlank()) return
-//        if (shipperId == 0L) {
-//            Log.e("ChatVM", "❌ Không thể gửi vì shipperId = 0")
-//            return
-//        }
-//
-//        // 🔍 Thêm dòng log này để kiểm tra shipperId thực tế
-//        Log.d("ChatSend", "🚀 Sending message toUser=$shipperId for order=$orderId")
-//
-//        val json = JSONObject().apply {
-//            put("type", "chat_message")
-//            put("order_id", orderId)
-//            put("to_user_id", shipperId) // ✅ ID shipper thật (users.id)
-//            put("content", content)
-//        }
-//
-//        Log.d("ChatVM", "📤 Sending: order=$orderId, to=$shipperId, msg=$content")
-//        webSocket?.send(json.toString())
-//
-//        val msg = ChatMessage(
-//            fromUserId = -1L, // user hiện tại
-//            toUserId = shipperId,
-//            content = content,
-//            createdAt = System.currentTimeMillis()
-//        )
-//        viewModelScope.launch { appendMessage(orderId, msg) }
-//    }
-
-
-    /** Lưu tin nhắn vào bộ nhớ và cache */
-//    private fun appendMessage(orderId: Long, msg: ChatMessage) {
-//        val map = _conversations.value.toMutableMap()
-//        val list = map[orderId] ?: mutableListOf()
-//        list.add(msg)
-//        map[orderId] = list
-//        _conversations.value = map
-//        saveConversation(orderId, list)
-//    }
-
     private fun appendMessage(orderId: Long, msg: ChatMessage) {
         val currentMap = _conversations.value
         val oldList = currentMap[orderId] ?: emptyList()
 
-        val newList = oldList + msg   // ✅ tạo list mới
+        val newList = oldList + msg
         val newMap = currentMap + (orderId to newList)
 
         _conversations.value = newMap
         saveConversation(orderId, newList)
     }
-
 
     fun clearConversation(orderId: Long) {
         val map = _conversations.value.toMutableMap()
@@ -241,7 +229,6 @@ class ChatViewModel @Inject constructor(
         super.onCleared()
     }
 
-    // ======= Cache bằng SharedPreferences =======
     private fun prefs() = appContext.getSharedPreferences("chat_cache_user", Context.MODE_PRIVATE)
 
     private fun saveConversation(orderId: Long, list: List<ChatMessage>) {
@@ -250,12 +237,12 @@ class ChatViewModel @Inject constructor(
 
     private fun loadCachedConversations() {
         val all = prefs().all
-        val map = mutableMapOf<Long, MutableList<ChatMessage>>()
+        val map = mutableMapOf<Long, List<ChatMessage>>()
         all.forEach { (orderIdStr, jsonStr) ->
             val id = orderIdStr.toLongOrNull() ?: return@forEach
-            val type = object : TypeToken<MutableList<ChatMessage>>() {}.type
+            val type = object : TypeToken<List<ChatMessage>>() {}.type
             runCatching {
-                val list: MutableList<ChatMessage> = gson.fromJson(jsonStr as String, type)
+                val list: List<ChatMessage> = gson.fromJson(jsonStr as String, type)
                 map[id] = list
             }
         }

@@ -20,6 +20,7 @@ data class OrderDetailDto(
     val user_name: String,
     val user_phone: String,
     val shipper_id: Long?,
+    val shipper_info: ShipperInfoDto?,
     val items: List<OrderItemDto>
 )
 
@@ -31,4 +32,11 @@ data class OrderItemDto(
     val quantity: Long,
     val price: Double,
     val subtotal: Double
+)
+
+
+data class ShipperInfoDto(
+    val id: Long,
+    val name: String,
+    val phone: String
 )
