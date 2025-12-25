@@ -27,11 +27,11 @@ import com.example.deliveryapp.data.remote.api.ChatApi
 @InstallIn(SingletonComponent::class)
 object NetworkModule {
 
-    // AuthApi "raw" (không interceptor) chỉ phục vụ cho refresh token
     @Provides
     @Singleton
     @RawAuthApi
-    fun provideRawAuthApi(): AuthApi = ApiClient.create().create(AuthApi::class.java)
+    fun provideRawAuthApi(): AuthApi =
+        ApiClient.createRaw().create(AuthApi::class.java)
 
     //Gan Quanlifier cho mapbox
     @Provides
@@ -68,8 +68,11 @@ object NetworkModule {
     @Provides
     @Singleton
     fun provideRetrofit(
-        @AuthInterceptorQualifier interceptor: Interceptor
-    ): Retrofit = ApiClient.create(interceptor)
+        @AuthInterceptorQualifier authInterceptor: Interceptor
+    ): Retrofit =
+        ApiClient.createWithAuth(authInterceptor)
+
+
 
     @Provides
     @Singleton
@@ -136,14 +139,6 @@ object NetworkModule {
             .build()
         return retrofit.create(GeocodingApi::class.java)
     }
-//    @Provides
-//    @Singleton
-//    fun provideSessionViewModel(
-//        dataStore: DataStoreManager,
-//        authRepository: AuthRepository,
-//        @NormalAuthApi authApi: AuthApi
-//    ): SessionViewModel = SessionViewModel(dataStore, authRepository, authApi)
-
 
     @Provides
     @Singleton

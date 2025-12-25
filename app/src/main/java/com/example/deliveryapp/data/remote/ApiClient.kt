@@ -10,18 +10,14 @@ import java.util.concurrent.TimeUnit
 
 object ApiClient {
 
-    fun create(authInterceptor: Interceptor? = null): Retrofit {
+    fun createWithAuth(authInterceptor: Interceptor): Retrofit {
         val logging = HttpLoggingInterceptor().apply {
             level = HttpLoggingInterceptor.Level.BODY
         }
 
         val okHttpClient = OkHttpClient.Builder()
-            .apply {
-                if (authInterceptor != null) {
-                    addInterceptor(authInterceptor) // 👈 GẮN TRƯỚC
-                }
-                addInterceptor(logging)
-            }
+            .addInterceptor(authInterceptor) // có auth
+            .addInterceptor(logging)
             .build()
 
         return Retrofit.Builder()
@@ -30,4 +26,22 @@ object ApiClient {
             .addConverterFactory(GsonConverterFactory.create())
             .build()
     }
+
+
+    fun createRaw(): Retrofit {
+        val logging = HttpLoggingInterceptor().apply {
+            level = HttpLoggingInterceptor.Level.BODY
+        }
+
+        val okHttpClient = OkHttpClient.Builder()
+            .addInterceptor(logging) // ❌ KHÔNG auth interceptor
+            .build()
+
+        return Retrofit.Builder()
+            .baseUrl(Constants.BASE_URL)
+            .client(okHttpClient)
+            .addConverterFactory(GsonConverterFactory.create())
+            .build()
+    }
+
 }

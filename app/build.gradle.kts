@@ -1,9 +1,10 @@
 plugins {
     id("com.android.application")
     kotlin("android")
-    id("com.google.devtools.ksp")
+
     id("com.google.dagger.hilt.android")
     id("kotlin-parcelize")
+    kotlin("kapt")
 }
 
 android {
@@ -62,12 +63,15 @@ hilt {
 }
 
 dependencies {
+
+    //lifecycle trong compose
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.7.0")
     // Core
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
     implementation("androidx.activity:activity-compose:1.8.2")
 
-// Compose BOM (downgrade về 2024.09.00 để tương thích AGP 8.3.2)
+    // Compose BOM (downgrade về 2024.09.00 để tương thích AGP 8.3.2)
     implementation(platform("androidx.compose:compose-bom:2024.09.00"))
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
@@ -81,7 +85,7 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.compose.android)
     implementation(libs.androidx.appcompat.resources)
     //kapt("com.google.dagger:hilt-compiler:2.48")
-    ksp("com.google.dagger:hilt-compiler:2.48")
+    kapt("com.google.dagger:hilt-compiler:2.48")
 
     implementation("androidx.hilt:hilt-navigation-compose:1.1.0")
 

@@ -27,13 +27,20 @@ fun SessionGateScreen(
         when (isLoggedIn) {
             true -> navController.navigate(Screen.Home.route) {
                 popUpTo(Screen.SessionGate.route) { inclusive = true }
+                launchSingleTop = true
+                restoreState = true
             }
+
             false -> navController.navigate(Screen.Login.route) {
                 popUpTo(Screen.SessionGate.route) { inclusive = true }
+                launchSingleTop = true
+                restoreState = true
             }
-            null -> Unit // Đang check
+
+            null -> Unit
         }
     }
+
 
     Box(Modifier.fillMaxSize(), Alignment.Center) {
         CircularProgressIndicator()
