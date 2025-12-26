@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.deliveryapp.data.remote.dto.*
 import com.example.deliveryapp.data.repository.AuthRepository
+import com.example.deliveryapp.utils.JwtUtils
 import com.example.deliveryapp.utils.Resource
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -41,8 +42,8 @@ class AuthViewModel @Inject constructor(
     fun signup(req: SignupRequestDto) = launchResource(_signupState) { repo.signup(req) }
     fun verifyOtp(email: String, otp: String) =
         launchResource(_verifyOtpState) { repo.verifyOtp(VerifyOtpRequestDto(email, otp)) }
-    fun login(email: String, password: String) =
-        launchResource(_loginState) { repo.login(LoginRequestDto(email, password)) }
+//    fun login(email: String, password: String) =
+//        launchResource(_loginState) { repo.login(LoginRequestDto(email, password)) }
     fun forgotPassword(email: String) =
         launchResource(_forgotPassState) { repo.forgotPassword(email) }
     fun verifyOtpForReset(email: String, otp: String) =
@@ -60,4 +61,28 @@ class AuthViewModel @Inject constructor(
             state.value = block()
         }
     }
+
+    //chặn đăng nhập nhiều thiết bị với role sai
+    fun login(email: String, password: String) {
+        viewModelScope.launch {
+            _loginState.value = Resource.Loading()
+
+            val result = repo.login(LoginRequestDto(email, password))
+
+            if (result is Resource.Success) {
+                val token = result.data?.accessToken
+                val role = token?.let { JwtUtils.getRoleFromToken(it) }
+
+                if (role != "customer") {
+                    _loginState.value = Resource.Error(
+                        "❌ Tài khoản này không được phép đăng nhập ứng dụng mua hàng"
+                    )
+                    return@launch
+                }
+            }
+
+            _loginState.value = result
+        }
+    }
+
 }
