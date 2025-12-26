@@ -45,9 +45,10 @@ fun MessagesScreen(
     viewModel: ChatViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
-    val dataStore = remember { DataStoreManager(context) }
-    val token by dataStore.accessToken.map { it ?: "" }.collectAsState(initial = "")
+    //val dataStore = remember { DataStoreManager(context) }
+   // val token by dataStore.accessToken.map { it ?: "" }.collectAsState(initial = "")
 
+    val token by viewModel.accessToken.map { it ?: "" }.collectAsState(initial = "")
     val messages by viewModel.conversations.collectAsState()
     val currentList = messages[orderId] ?: emptyList()
     var inputText by remember { mutableStateOf("") }

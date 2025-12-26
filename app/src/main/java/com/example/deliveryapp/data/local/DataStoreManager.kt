@@ -8,6 +8,7 @@ import androidx.datastore.preferences.core.doublePreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.example.deliveryapp.security.CryptoManager
 import com.example.deliveryapp.utils.Constants
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
@@ -18,35 +19,91 @@ import javax.inject.Singleton
 
 private const val TAG = "DataStoreManager"
 
-// Đảm bảo đây là top-level property để DataStore được khởi tạo đúng cách
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = Constants.PREFS_NAME)
-
-//class DataStoreManager(private val context: Context)
 
 @Singleton
 class DataStoreManager @Inject constructor(
-    @ApplicationContext private val context: Context
-)
-
-{
+    @ApplicationContext private val context: Context,
+    private val cryptoManager: CryptoManager
+) {
     companion object {
-        val ACCESS_TOKEN_KEY = stringPreferencesKey(Constants.KEY_ACCESS_TOKEN)
-        val REFRESH_TOKEN_KEY = stringPreferencesKey(Constants.KEY_REFRESH_TOKEN)
+        // Key cũ (plaintext)
+        private val OLD_ACCESS_KEY = stringPreferencesKey("access_token")
+        private val OLD_REFRESH_KEY = stringPreferencesKey("refresh_token")
 
-        // Thêm keys cho latitude/longitude
+        // Key mới (encrypted)
+        val ACCESS_TOKEN_ENC_KEY = stringPreferencesKey("access_token_enc")
+        val REFRESH_TOKEN_ENC_KEY = stringPreferencesKey("refresh_token_enc")
+
         val LATITUDE_KEY = doublePreferencesKey("latitude")
         val LONGITUDE_KEY = doublePreferencesKey("longitude")
     }
 
+    // ✅ Migration tự động khi init
+    init {
+        // Không dùng coroutine trong init, sẽ gọi từ bên ngoài
+    }
+
+    /**
+     * ✅ Gọi hàm này TỪ BÊN NGOÀI (MainActivity/Application) 1 lần duy nhất
+     */
+    suspend fun migrateIfNeeded() {
+        try {
+            val prefs = context.dataStore.data.first()
+
+            val oldAccess = prefs[OLD_ACCESS_KEY]
+            val oldRefresh = prefs[OLD_REFRESH_KEY]
+
+            // Nếu có token cũ và chưa có token mới
+            if (oldAccess != null && prefs[ACCESS_TOKEN_ENC_KEY] == null) {
+                Log.d(TAG, "🔄 Migrating old tokens to encrypted format...")
+
+                val encryptedAccess = cryptoManager.encrypt(oldAccess)
+                val encryptedRefresh = oldRefresh?.let { cryptoManager.encrypt(it) }
+
+                if (encryptedAccess != null) {
+                    context.dataStore.edit { mutablePrefs ->
+                        // Lưu token mới (encrypted)
+                        mutablePrefs[ACCESS_TOKEN_ENC_KEY] = encryptedAccess
+                        if (encryptedRefresh != null) {
+                            mutablePrefs[REFRESH_TOKEN_ENC_KEY] = encryptedRefresh
+                        }
+
+                        // Xóa token cũ
+                        mutablePrefs.remove(OLD_ACCESS_KEY)
+                        mutablePrefs.remove(OLD_REFRESH_KEY)
+                    }
+
+                    Log.d(TAG, "✅ Migration completed successfully")
+                } else {
+                    Log.e(TAG, "❌ Encryption failed during migration")
+                }
+            } else {
+                Log.d(TAG, "ℹ️ No migration needed")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Migration failed: ${e.message}", e)
+        }
+    }
+
     val accessToken: Flow<String?> = context.dataStore.data.map { prefs ->
-        prefs[ACCESS_TOKEN_KEY]
+        val encrypted = prefs[ACCESS_TOKEN_ENC_KEY]
+        if (encrypted != null) {
+            cryptoManager.decrypt(encrypted)
+        } else {
+            null
+        }
     }
 
     val refreshToken: Flow<String?> = context.dataStore.data.map { prefs ->
-        prefs[REFRESH_TOKEN_KEY]
+        val encrypted = prefs[REFRESH_TOKEN_ENC_KEY]
+        if (encrypted != null) {
+            cryptoManager.decrypt(encrypted)
+        } else {
+            null
+        }
     }
 
-    // Thêm flows cho latitude/longitude
     val latitude: Flow<Double?> = context.dataStore.data.map { prefs ->
         prefs[LATITUDE_KEY]
     }
@@ -56,27 +113,40 @@ class DataStoreManager @Inject constructor(
     }
 
     suspend fun saveTokens(access: String, refresh: String) {
-        Log.d(TAG, "Saving tokens - Access: ${access.take(10)}..., Refresh: ${refresh.take(10)}...")
-        context.dataStore.edit { prefs ->
-            prefs[ACCESS_TOKEN_KEY] = access
-            prefs[REFRESH_TOKEN_KEY] = refresh
+        Log.d(TAG, "Encrypting and saving tokens...")
+
+        val encryptedAccess = cryptoManager.encrypt(access)
+        val encryptedRefresh = cryptoManager.encrypt(refresh)
+
+        if (encryptedAccess == null || encryptedRefresh == null) {
+            Log.e(TAG, "Encryption failed, tokens not saved")
+            return
         }
 
-        // Verify tokens were saved
-        val savedAccess = context.dataStore.data.first()[ACCESS_TOKEN_KEY]
-        val savedRefresh = context.dataStore.data.first()[REFRESH_TOKEN_KEY]
-        Log.d(TAG, "Saved tokens - Access: ${savedAccess?.take(10)}..., Refresh: ${savedRefresh?.take(10)}...")
+        // ✅ LOG TRƯỚC KHI GHI
+        Log.d(
+            TAG,
+            "💾 Saving encrypted tokens:\n" +
+                    "access_enc=${encryptedAccess.take(60)}...\n" +
+                    "refresh_enc=${encryptedRefresh.take(60)}..."
+        )
+
+        context.dataStore.edit { prefs ->
+            prefs[ACCESS_TOKEN_ENC_KEY] = encryptedAccess
+            prefs[REFRESH_TOKEN_ENC_KEY] = encryptedRefresh
+        }
+
+        Log.d(TAG, "Tokens encrypted and saved successfully")
     }
 
     suspend fun clearTokens() {
         Log.d(TAG, "Clearing all tokens")
         context.dataStore.edit { prefs ->
-            prefs.remove(ACCESS_TOKEN_KEY)
-            prefs.remove(REFRESH_TOKEN_KEY)
+            prefs.remove(ACCESS_TOKEN_ENC_KEY)
+            prefs.remove(REFRESH_TOKEN_ENC_KEY)
         }
     }
 
-    // Thêm method saveLocation
     suspend fun saveLocation(lat: Double, lng: Double) {
         Log.d(TAG, "Saving location: Lat=$lat, Lng=$lng")
         context.dataStore.edit { prefs ->
@@ -85,7 +155,6 @@ class DataStoreManager @Inject constructor(
         }
     }
 
-    // Optional: Thêm clearLocation nếu cần reset
     suspend fun clearLocation() {
         Log.d(TAG, "Clearing location")
         context.dataStore.edit { prefs ->

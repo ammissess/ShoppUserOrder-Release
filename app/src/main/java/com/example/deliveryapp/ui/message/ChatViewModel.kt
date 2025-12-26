@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.deliveryapp.data.local.DataStoreManager
 import com.example.deliveryapp.data.remote.api.ChatApi
 import com.example.deliveryapp.utils.Constants
 import com.google.gson.Gson
@@ -21,8 +22,12 @@ import javax.inject.Inject
 @HiltViewModel
 class ChatViewModel @Inject constructor(
     @ApplicationContext private val appContext: Context,
-    private val chatApi: ChatApi
+    private val chatApi: ChatApi,
+    private val dataStoreManager: DataStoreManager
 ) : ViewModel() {
+
+    //access token flow
+    val accessToken = dataStoreManager.accessToken
 
     private val _conversations = MutableStateFlow<Map<Long, List<ChatMessage>>>(emptyMap())
     val conversations: StateFlow<Map<Long, List<ChatMessage>>> = _conversations

@@ -23,6 +23,8 @@ import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import javax.inject.Singleton
 import com.example.deliveryapp.data.remote.api.ChatApi
+import com.example.deliveryapp.security.CryptoManager
+
 @Module
 @InstallIn(SingletonComponent::class)
 object NetworkModule {
@@ -48,12 +50,12 @@ object NetworkModule {
             .build()
     }
 
-
-    // DataStoreManager
-    @Provides
-    @Singleton
-    fun provideDataStoreManager(@ApplicationContext context: Context): DataStoreManager =
-        DataStoreManager(context)
+//Bỏ cái này vì bổ xung thuộc CryptoManager vào DataStoreManager để mã hóa
+//    // DataStoreManager
+//    @Provides
+//    @Singleton
+//    fun provideDataStoreManager(@ApplicationContext context: Context): DataStoreManager =
+//        DataStoreManager(context)
 
     // Interceptor, cần RawAuthApi để gọi refresh (tránh vòng lặp)
     @Provides
@@ -63,6 +65,23 @@ object NetworkModule {
         dataStore: DataStoreManager,
         @RawAuthApi rawAuthApi: AuthApi
     ): Interceptor = AuthInterceptor(dataStore, rawAuthApi)
+
+
+    //Mã hóa Retrofit với AuthInterceptor
+    // Thêm vào phần @Provides
+
+    @Provides
+    @Singleton
+    fun provideCryptoManager(): CryptoManager = CryptoManager()
+
+    // ✅ Sửa provideDataStoreManager để inject CryptoManager
+    @Provides
+    @Singleton
+    fun provideDataStoreManager(
+        @ApplicationContext context: Context,
+        cryptoManager: CryptoManager
+    ): DataStoreManager = DataStoreManager(context, cryptoManager)
+
 
 
     @Provides
